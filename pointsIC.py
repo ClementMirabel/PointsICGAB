@@ -1,6 +1,18 @@
+import os
+import sys
 import requests
 from bs4 import BeautifulSoup
 import openpyxl
+
+# écrit toujours le xlsx à côté de l'exécutable, peu importe le dossier
+# "courant" depuis lequel l'app a été lancée (double-clic Finder/Explorer).
+# Sur Mac, le binaire réel vit caché dans pointsIC.app/Contents/MacOS/bin ;
+# le lanceur du bundle exporte POINTSIC_OUTPUT_DIR vers l'emplacement visible
+# de l'app (là où l'utilisateur s'attend à voir apparaître le xlsx).
+if getattr(sys, "frozen", False):
+    APP_DIR = os.environ.get("POINTSIC_OUTPUT_DIR") or os.path.dirname(os.path.abspath(sys.executable))
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LEAGUE = "3304"
 COMMITTEE = "110"
@@ -170,8 +182,9 @@ def write_summaries(data):
             player["Points meilleur tableau"],
             player["Valeur IC"]
         ])
-    wb.save("pointsIC.xlsx")
-    return len(data)
+    output_path = os.path.join(APP_DIR, "pointsIC.xlsx")
+    wb.save(output_path)
+    return len(data), output_path
 
 
 if __name__ == "__main__":
@@ -184,8 +197,8 @@ if __name__ == "__main__":
             players = build_players(session)
 
         results = [compute_IC_points(player) for player in players]
-        written = write_summaries(results)
-        print(f"{len(results)} joueurs traités, {written} écrits (Valeur IC >= 24) -> pointsIC.xlsx")
+        written, output_path = write_summaries(results)
+        print(f"{len(results)} joueurs traités, {written} écrits (Valeur IC >= 24) -> {output_path}")
     except Exception as e:
         print(f"Erreur : {e}")
 

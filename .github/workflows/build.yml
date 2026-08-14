@@ -7,6 +7,7 @@ on:
       - "pointsIC.py"
       - "pointsIC.spec"
       - "requirements.txt"
+      - "macos/**"
       - ".github/workflows/build.yml"
   workflow_dispatch:
 
@@ -29,11 +30,21 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build standalone .app bundle
+      - name: Build standalone binary (onedir)
         run: pyinstaller pointsIC.spec
 
+      - name: Assemble the .app bundle around a Terminal-opening launcher
+        run: |
+          APP=pointsIC.app
+          mkdir -p "$APP/Contents/MacOS/bin"
+          cp macos/Info.plist "$APP/Contents/Info.plist"
+          cp macos/launcher.sh "$APP/Contents/MacOS/launcher"
+          chmod +x "$APP/Contents/MacOS/launcher"
+          cp -R dist/pointsIC/. "$APP/Contents/MacOS/bin/"
+          chmod +x "$APP/Contents/MacOS/bin/pointsIC"
+
       - name: Zip the .app bundle (preserves permissions/metadata)
-        run: ditto -c -k --keepParent dist/pointsIC.app pointsIC-macos.app.zip
+        run: ditto -c -k --keepParent pointsIC.app pointsIC-macos.app.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

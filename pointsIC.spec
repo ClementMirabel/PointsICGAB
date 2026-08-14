@@ -36,10 +36,3 @@ coll = COLLECT(
     upx_exclude=[],
     name='pointsIC',
 )
-
-app = BUNDLE(
-    coll,
-    name='pointsIC.app',
-    icon=None,
-    bundle_identifier='fr.gab38.pointsic',
-)

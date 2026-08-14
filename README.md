@@ -13,9 +13,12 @@ Pas besoin d'installer Python : ce sont des exécutables autonomes.
 
 ### Installation — Mac
 
-1. Double-clique sur le fichier téléchargé pour le dézipper (tu obtiens `pointsIC.app`).
-2. Premier lancement : **clic droit** sur `pointsIC.app` → **Ouvrir** → confirmer dans la boîte de dialogue (macOS bloque par défaut les applications non signées par un compte développeur Apple). Les lancements suivants se font par simple double-clic.
-3. Un Terminal s'ouvre et affiche la progression.
+1. Double-clique sur le fichier téléchargé pour le dézipper (tu obtiens `pointsIC.app`). Fais-le glisser dans ton dossier **Applications** si tu veux.
+2. **Débloque l'app (une seule fois)** : l'app n'étant pas signée par un compte développeur Apple (payant), macOS la bloque par défaut. La méthode la plus fiable — le simple clic droit → Ouvrir ne suffit pas toujours ici car l'app contient un programme interne à débloquer aussi :
+   - Ouvre **Terminal** (Cmd+Espace, tape "Terminal").
+   - Tape `xattr -dr com.apple.quarantine ` (avec l'espace à la fin, sans appuyer sur Entrée).
+   - Fais glisser `pointsIC.app` depuis le Finder dans la fenêtre Terminal (ça complète le chemin automatiquement), puis appuie sur Entrée.
+3. Double-clique sur `pointsIC.app`. Une fenêtre Terminal s'ouvre toute seule et affiche la progression (macOS peut demander l'autorisation de "contrôler Terminal" la première fois : accepte).
 
 ### Installation — Windows
 
