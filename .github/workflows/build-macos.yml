@@ -1,0 +1,35 @@
+name: Build macOS executable
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "pointsIC.py"
+      - "requirements.txt"
+      - ".github/workflows/build-macos.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14  # Apple Silicon (arm64)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build standalone executable
+        run: pyinstaller --onefile --name pointsIC pointsIC.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pointsIC-macos-arm64
+          path: dist/pointsIC
