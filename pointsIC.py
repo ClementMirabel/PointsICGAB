@@ -175,13 +175,18 @@ def write_summaries(data):
 
 
 if __name__ == "__main__":
-    with requests.Session() as session:
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-        })
-        players = build_players(session)
+    try:
+        with requests.Session() as session:
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+            })
+            players = build_players(session)
 
-    results = [compute_IC_points(player) for player in players]
-    written = write_summaries(results)
-    print(f"{len(results)} joueurs traités, {written} écrits (Valeur IC >= 24) -> pointsIC.xlsx")
+        results = [compute_IC_points(player) for player in players]
+        written = write_summaries(results)
+        print(f"{len(results)} joueurs traités, {written} écrits (Valeur IC >= 24) -> pointsIC.xlsx")
+    except Exception as e:
+        print(f"Erreur : {e}")
+
+    input("\nAppuie sur Entrée pour fermer...")
