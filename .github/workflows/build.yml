@@ -75,10 +75,9 @@ jobs:
           path: artifacts
 
       - name: Delete previous "latest" release (avoid stale/renamed assets)
-        uses: dev-drprasad/delete-tag-and-release@v1
-        with:
-          tag_name: latest
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete latest --yes --cleanup-tag --repo "$GITHUB_REPOSITORY"
         continue-on-error: true
 
       - name: Publish/update the "latest" release
