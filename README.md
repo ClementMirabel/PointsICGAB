@@ -2,7 +2,19 @@
 
 Calcule la Valeur IC de tous les joueurs du club GAB38 à partir des classements publics de [myffbad.fr](https://myffbad.fr/recherche/les-tops), et exporte un Excel filtré (Valeur IC ≥ 24) et trié.
 
-## Télécharger
+## Fichier Excel (mise à jour automatique)
+
+Pas besoin d'installer quoi que ce soit : un export à jour est généré tous les **jeudis vers midi** et disponible ici :
+
+[**⬇️ Télécharger pointsIC.xlsx**](https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/pointsIC.xlsx)
+
+C'est un lien fixe : il pointe toujours vers la dernière version générée, pas besoin de le remettre à jour.
+
+## Applications (pour lancer un export à la demande)
+
+Pour générer un export à un autre moment que le jeudi, deux applications autonomes sont aussi disponibles.
+
+### Télécharger
 
 | Système | Lien | Fichier |
 |---|---|---|

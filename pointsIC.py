@@ -202,4 +202,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Erreur : {e}")
 
-    input("\nAppuie sur Entrée pour fermer...")
+    # ne bloque que si un humain est vraiment devant un terminal
+    # (évite un EOFError quand le script tourne sans surveillance, ex. CI)
+    if sys.stdin.isatty():
+        input("\nAppuie sur Entrée pour fermer...")
