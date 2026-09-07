@@ -5,6 +5,12 @@ on:
     # Jeudi 10:00 UTC ≈ midi à Paris (11:00 en hiver/CET, 12:00 en été/CEST -
     # cron ne gère pas le changement d'heure, donc à ~1h près selon la saison)
     - cron: "0 10 * * 4"
+  push:
+    branches: [ main ]
+    paths:
+      - "pointsIC.py"
+      - "requirements.txt"
+      - ".github/workflows/weekly-export.yml"
   workflow_dispatch:
 
 permissions:
