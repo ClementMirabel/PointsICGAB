@@ -1,9 +1,14 @@
 """Écriture du classeur Excel à 8 onglets (SH/SD/DH/DD/MX, Tournois, Bilan
-joueur, Stats club) à partir des stats produites par stats.py."""
-from collections import defaultdict
+joueur, Stats club) à partir des stats produites par stats.py, avec mise en
+forme conditionnelle (classements colorés comme sur le site, dégradé de
+performance par colonne)."""
+from collections import Counter, defaultdict
 
 import openpyxl
-from openpyxl.chart import BarChart, Reference
+from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.formatting.rule import ColorScaleRule, FormulaRule
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 DISCIPLINE_SHEETS = [
     # (titre, tableau, sexe ou None si le tableau n'est pas séparé par genre)
@@ -14,10 +19,79 @@ DISCIPLINE_SHEETS = [
     ("MX", "Mixte", None),
 ]
 
+# ---------------------------------------------------------------- couleurs
+
+FILL_N = PatternFill("solid", fgColor="FFE74C3C")  # rouge
+FILL_R = PatternFill("solid", fgColor="FF3498DB")  # bleu
+FILL_D = PatternFill("solid", fgColor="FF27AE60")  # vert
+FONT_BLANC = Font(color="FFFFFFFF")
+
+FILL_SIMPLE = PatternFill("solid", fgColor="FFD5E8D4")
+FILL_DOUBLE = PatternFill("solid", fgColor="FFDAE8FC")
+FILL_MIXTE = PatternFill("solid", fgColor="FFFFE6CC")
+
+# colonnes texte qu'on ne colore pas en dégradé (déjà colorées autrement,
+# ou pas un indicateur de performance)
+CLASSEMENT_HEADERS = {"Classement", "Classement sept. S", "Classement sept. D", "Classement sept. M"}
+TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
+                "Ordre tableau"} | CLASSEMENT_HEADERS
+
 
 def _pct(value):
     return round(value, 1)
 
+
+def _colorer_classement(ws, col_idx, first_row, last_row):
+    """N=rouge, R=bleu, D=vert, comme les badges du site. P10-P12 non colorés."""
+    if last_row < first_row:
+        return
+    col = get_column_letter(col_idx)
+    plage = f"{col}{first_row}:{col}{last_row}"
+    ref = f"{col}{first_row}"
+    for lettre, fill in (("N", FILL_N), ("R", FILL_R), ("D", FILL_D)):
+        ws.conditional_formatting.add(
+            plage, FormulaRule(formula=[f'LEFT({ref},1)="{lettre}"'], fill=fill, font=FONT_BLANC))
+
+
+def _colorer_ordre_tableau(ws, col_idx, first_row, last_row):
+    """Couleur selon la discipline en tête (la plus forte pour le joueur)."""
+    if last_row < first_row:
+        return
+    col = get_column_letter(col_idx)
+    plage = f"{col}{first_row}:{col}{last_row}"
+    ref = f"{col}{first_row}"
+    for prefixe, fill in (("Simple", FILL_SIMPLE), ("Double", FILL_DOUBLE), ("Mixte", FILL_MIXTE)):
+        ws.conditional_formatting.add(
+            plage, FormulaRule(formula=[f'LEFT({ref},{len(prefixe)})="{prefixe}"'], fill=fill))
+
+
+def _degrade(ws, col_idx, first_row, last_row):
+    """Dégradé rouge (bas) -> jaune -> vert (haut) sur la colonne."""
+    if last_row < first_row:
+        return
+    col = get_column_letter(col_idx)
+    plage = f"{col}{first_row}:{col}{last_row}"
+    rule = ColorScaleRule(
+        start_type="min", start_color="FFF8696B",
+        mid_type="percentile", mid_value=50, mid_color="FFFFEB84",
+        end_type="max", end_color="FF63BE7B",
+    )
+    ws.conditional_formatting.add(plage, rule)
+
+
+def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
+    """Classements colorés par tableau, dégradé de performance sur les
+    autres colonnes numériques, une seule fois toutes les lignes écrites."""
+    for idx, header in enumerate(headers, start=1):
+        if header in CLASSEMENT_HEADERS:
+            _colorer_classement(ws, idx, first_row, last_row)
+        elif header == "Ordre tableau":
+            _colorer_ordre_tableau(ws, idx, first_row, last_row)
+        elif header not in TEXT_HEADERS:
+            _degrade(ws, idx, first_row, last_row)
+
+
+# ------------------------------------------------------- onglets par tableau
 
 def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     ws = wb.create_sheet(title)
@@ -65,8 +139,11 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         row += [_pct(entry["indice_performance"]), entry["indice_niveau"], _pct(entry["indice_global"])]
         ws.append(row)
 
+    _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
     return ws
 
+
+# ------------------------------------------------------------- Bilan joueur
 
 def _fmt_progression(bloc):
     """classement/place/cote de septembre, place/cote actuelle, gain de
@@ -83,7 +160,7 @@ def _fmt_progression(bloc):
 
 def _write_bilan_sheet(wb, all_stats):
     ws = wb.create_sheet("Bilan joueur")
-    ws.append([
+    headers = [
         "Nom", "Sexe", "Ordre tableau",
         "Matchs S", "Victoires S", "% S",
         "Matchs D", "Victoires D", "% D",
@@ -92,6 +169,8 @@ def _write_bilan_sheet(wb, all_stats):
         "Matchs avec partenaire club (D+M)", "% avec partenaire club",
         "Matchs sans partenaire club (D+M)", "% sans partenaire club",
         "Delta % partenaire (avec - sans)",
+        "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
+        "% victoire avec lui/elle", "Indice perf. avec lui/elle",
         "Nb tournois individuels", "Nb interclubs (par jour)",
         "Classement sept. S", "Place sept. S", "Cote sept. S", "Place actuelle S", "Cote actuelle S",
         "Gain places S", "Diff cote S", "Diff relative S (%)",
@@ -101,7 +180,8 @@ def _write_bilan_sheet(wb, all_stats):
         "Gain places M", "Diff cote M", "Diff relative M (%)",
         "Diff cote cumulée", "Diff relative cumulée (%)",
         "Indice performance", "Indice niveau", "Indice global",
-    ])
+    ]
+    ws.append(headers)
 
     rows = sorted(all_stats, key=lambda s: -s["global"]["indice_global"])
     for s in rows:
@@ -110,9 +190,10 @@ def _write_bilan_sheet(wb, all_stats):
         p = s["partenaire_double_mixte"]
         avec, sans = p["avec_partenaire_club"], p["sans_partenaire_club"]
         cum = prog["cumule"]
+        mp = s["meilleur_partenaire_double_mixte"]
 
         row = [
-            s["Nom"], s["Sexe"], g["ordre_tableau"],
+            s["Nom"], s["Sexe"], " > ".join(s["ordre_disciplines"]),
             simple["matchs_joues"], simple["victoires"], _pct(simple["pct_victoire"]),
             double["matchs_joues"], double["victoires"], _pct(double["pct_victoire"]),
             mixte["matchs_joues"], mixte["victoires"], _pct(mixte["pct_victoire"]),
@@ -120,8 +201,13 @@ def _write_bilan_sheet(wb, all_stats):
             avec["matchs_joues"], _pct(avec["pct_victoire"]),
             sans["matchs_joues"], _pct(sans["pct_victoire"]),
             _pct(p["delta_pct"]),
-            t["nb_tournois"], t["nb_interclubs"],
         ]
+        if mp:
+            row += [mp["nom"], mp["matchs_joues"], mp["victoires"],
+                    _pct(mp["pct_victoire"]), round(mp["indice_performance"], 2)]
+        else:
+            row += [None, None, None, None, None]
+        row += [t["nb_tournois"], t["nb_interclubs"]]
         row += _fmt_progression(prog["Simple"])
         row += _fmt_progression(prog["Double"])
         row += _fmt_progression(prog["Mixte"])
@@ -131,8 +217,12 @@ def _write_bilan_sheet(wb, all_stats):
         ]
         row += [_pct(g["indice_performance"]), g["indice_niveau"], _pct(g["indice_global"])]
         ws.append(row)
+
+    _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
     return ws
 
+
+# ----------------------------------------------------------------- Tournois
 
 def _joueur_par_mois(t):
     """t = s["tournois"] -> {mois: {weekend, soiree, interclub}}."""
@@ -182,36 +272,64 @@ def _write_tournois_sheet(wb, all_stats):
     rows.sort(key=lambda r: -r[-1])  # total total décroissant
     for row in rows:
         ws.append(row)
+    _appliquer_mise_en_forme(ws, header, 2, 1 + len(rows))
 
+    # --- tableau + graphique club par mois ---
     ws.append([])
     ws.append(["Par mois (club)"])
-    header_row = ws.max_row + 1
+    mois_header_row = ws.max_row + 1
     ws.append(["Mois", "Tournois weekend", "Tournois soirée", "Interclubs"])
-    first_data_row = ws.max_row + 1
+    mois_first_row = ws.max_row + 1
     for mois in mois_tries:
         b = par_mois_club[mois]
         ws.append([mois, b["weekend"], b["soiree"], b["interclub"]])
-    last_data_row = ws.max_row
+    mois_last_row = ws.max_row
 
-    if last_data_row >= first_data_row:
+    if mois_last_row >= mois_first_row:
         chart = BarChart()
         chart.type = "col"
         chart.title = "Tournois et interclubs par mois"
         chart.y_axis.title = "Nombre"
         chart.x_axis.title = "Mois"
-        data = Reference(ws, min_col=2, max_col=4, min_row=header_row, max_row=last_data_row)
-        categories = Reference(ws, min_col=1, min_row=first_data_row, max_row=last_data_row)
+        data = Reference(ws, min_col=2, max_col=4, min_row=mois_header_row, max_row=mois_last_row)
+        categories = Reference(ws, min_col=1, min_row=mois_first_row, max_row=mois_last_row)
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(categories)
-        ws.add_chart(chart, f"F{header_row}")
+        ws.add_chart(chart, f"F{mois_header_row}")
+
+    # --- distribution : nombre de joueurs par nombre de tournois individuels ---
+    ws.append([])
+    ws.append(["Joueurs par nombre de tournois individuels"])
+    dist_header_row = ws.max_row + 1
+    ws.append(["Nb tournois", "Nb joueurs"])
+    dist_first_row = ws.max_row + 1
+    compte = Counter(s["tournois"]["nb_tournois"] for s in all_stats)
+    for nb in sorted(compte):
+        ws.append([nb, compte[nb]])
+    dist_last_row = ws.max_row
+
+    if dist_last_row >= dist_first_row:
+        chart2 = BarChart()
+        chart2.type = "col"
+        chart2.title = "Nombre de joueurs par nombre de tournois individuels"
+        chart2.y_axis.title = "Nombre de joueurs"
+        chart2.x_axis.title = "Nombre de tournois"
+        data2 = Reference(ws, min_col=2, min_row=dist_header_row, max_row=dist_last_row)
+        categories2 = Reference(ws, min_col=1, min_row=dist_first_row, max_row=dist_last_row)
+        chart2.add_data(data2, titles_from_data=True)
+        chart2.set_categories(categories2)
+        ws.add_chart(chart2, f"F{dist_header_row + 18}")
 
     return ws
 
 
+# --------------------------------------------------------------- Stats club
+
 # catégories affichées en colonnes, chacune avec 3 sous-colonnes
 # (matchs/victoires/%) : SH/SD/DH/DD/MX comme les onglets par tableau, puis
 # des vues transverses (tout tableau confondu par genre, et Simple/Double
-# unisexe).
+# unisexe). Les 5 premières alimentent le graphique combiné (barres
+# empilées + courbes de %).
 CLUB_CATEGORIES = ["SH", "SD", "DH", "DD", "MX",
                     "H (tous tableaux)", "F (tous tableaux)",
                     "S (unisexe)", "D (unisexe)"]
@@ -247,13 +365,48 @@ def _write_club_sheet(wb, all_stats):
         header += [f"{cat} - matchs", f"{cat} - victoires", f"{cat} - %"]
     ws.append(header)
 
-    for mois in sorted(par_mois):
+    mois_tries = sorted(par_mois)
+    for mois in mois_tries:
         row = [mois]
         for cat in CLUB_CATEGORIES:
             b = par_mois[mois][cat]
             pct = (b["victoires"] / b["joues"] * 100) if b["joues"] else 0.0
             row += [b["joues"], b["victoires"], _pct(pct)]
         ws.append(row)
+
+    header_row = 1
+    first_row = 2
+    last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, header, first_row, last_row)
+
+    if last_row >= first_row:
+        bar = BarChart()
+        bar.type = "col"
+        bar.grouping = "stacked"
+        bar.overlap = 100
+        bar.title = "Matchs joués par mois (par tableau) et % de victoire"
+        bar.y_axis.title = "Matchs joués"
+        bar.x_axis.title = "Mois"
+
+        line = LineChart()
+        line.y_axis.axId = 200
+        line.y_axis.title = "% victoire"
+        line.y_axis.crosses = "max"
+
+        for i in range(5):  # SH, SD, DH, DD, MX
+            matchs_col = 2 + i * 3
+            pct_col = 4 + i * 3
+            bar.add_data(Reference(ws, min_col=matchs_col, min_row=header_row, max_row=last_row),
+                         titles_from_data=True)
+            line.add_data(Reference(ws, min_col=pct_col, min_row=header_row, max_row=last_row),
+                          titles_from_data=True)
+
+        categories = Reference(ws, min_col=1, min_row=first_row, max_row=last_row)
+        bar.set_categories(categories)
+        line.set_categories(categories)
+
+        bar += line
+        ws.add_chart(bar, f"AF{header_row}")
 
     return ws
 

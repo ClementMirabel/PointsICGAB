@@ -79,38 +79,57 @@ def discipline_stats_partenaire_combinee(events_double, events_mixte):
     return _split_partenaire(matchs)
 
 
-def meilleur_partenaire(events):
-    """Double ou Mixte : le partenaire avec lequel le joueur a le meilleur
-    indice de performance (victoires x taux de victoire - même formule que
+def _meilleur_partenaire_parmi(matchs):
+    """Le partenaire avec lequel le joueur a le meilleur indice de
+    performance (victoires x taux de victoire - même formule que
     indice_performance, pas de seuil arbitraire : un partenaire joué 1 fois
     et gagné donne un indice de 1, tandis qu'un partenaire joué 5 fois et
     gagné 5 fois donne 5 - le volume l'emporte naturellement). Regroupe par
-    licence quand connue, par nom sinon (adversaire jamais identifié en
-    double, mais un partenaire l'est presque toujours). None si le joueur
-    n'a aucun match dans ce tableau."""
+    licence quand connue, par nom sinon. None si `matchs` est vide."""
     par_partenaire = defaultdict(list)
-    for e in events:
-        for m in e["matchs"]:
-            cle = m["partenaire_licence"] or m["partenaire_nom"]
-            if cle is None:
-                continue
-            par_partenaire[cle].append(m)
+    for m in matchs:
+        cle = m["partenaire_licence"] or m["partenaire_nom"]
+        if cle is None:
+            continue
+        par_partenaire[cle].append(m)
 
     meilleur = None
     meilleur_indice = -1
-    for matchs in par_partenaire.values():
-        agg = _agg_matchs(matchs)
+    for ms in par_partenaire.values():
+        agg = _agg_matchs(ms)
         indice = indice_performance(agg)
         if indice > meilleur_indice:
             meilleur_indice = indice
             meilleur = {
-                "nom": matchs[0]["partenaire_nom"],
+                "nom": ms[0]["partenaire_nom"],
                 "matchs_joues": agg["matchs_joues"],
                 "victoires": agg["victoires"],
                 "pct_victoire": agg["pct_victoire"],
                 "indice_performance": indice,
             }
     return meilleur
+
+
+def meilleur_partenaire(events):
+    """Double ou Mixte uniquement (un seul tableau)."""
+    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]])
+
+
+def meilleur_partenaire_combine(events_double, events_mixte):
+    """Double + Mixte fusionnés (le partenaire est un partenaire, peu
+    importe le tableau)."""
+    matchs = [m for events in (events_double, events_mixte) for e in events for m in e["matchs"]]
+    return _meilleur_partenaire_parmi(matchs)
+
+
+def ordre_disciplines(par_tableau):
+    """Les 3 tableaux (Simple/Double/Mixte) triés du plus fort au moins
+    fort pour ce joueur, selon l'indice de performance BRUT de chacun (pas
+    la version normalisée club-wide, qui compare des échelles différentes
+    par tableau - ici on compare les 3 tableaux d'un même joueur entre
+    eux, la valeur brute est directement comparable pour ça)."""
+    tableaux = ("Simple", "Double", "Mixte")
+    return sorted(tableaux, key=lambda t: -par_tableau[t]["indice_performance_brut"])
 
 
 def diff_classement(player):
@@ -257,6 +276,8 @@ def build_player_stats(player, events_par_tableau):
 
     partenaire_double_mixte = discipline_stats_partenaire_combinee(
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
+    meilleur_partenaire_dm = meilleur_partenaire_combine(
+        events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
 
     tous_matchs = [m for events in events_par_tableau.values() for e in events for m in e["matchs"]]
     stats_globales = _agg_matchs(tous_matchs)
@@ -281,6 +302,8 @@ def build_player_stats(player, events_par_tableau):
         "Sexe": player["Sexe"],
         "par_tableau": par_tableau,
         "partenaire_double_mixte": partenaire_double_mixte,
+        "meilleur_partenaire_double_mixte": meilleur_partenaire_dm,
+        "ordre_disciplines": ordre_disciplines(par_tableau),
         "progression": diff_classement(player),
         "global": {
             **stats_globales,
@@ -311,18 +334,3 @@ def normaliser_club(all_stats):
     maxima["Global - performance"] = normaliser(globaux, "indice_performance_brut", "indice_performance")
     maxima["Global - global"] = normaliser(globaux, "indice_global_brut", "indice_global")
     return maxima
-
-
-def compute_ordre_tableau(all_stats):
-    """Classe tous les joueurs du club : meilleur tableau (N1 > N2 > ...),
-    puis en cas d'égalité leur position dans ce tableau (rang club), puis en
-    cas d'égalité (rare) leur cote. Ajoute s["global"]["ordre_tableau"] =
-    position 1..N (modifie all_stats en place)."""
-    def key(s):
-        g = s["global"]
-        tier = roster.TABLEAUX.index(g["meilleur_tableau"])
-        rang = g["rang_meilleur_tableau"] if g["rang_meilleur_tableau"] is not None else 10 ** 9
-        return (tier, rang, -g["points_meilleur_tableau"])
-
-    for position, s in enumerate(sorted(all_stats, key=key), start=1):
-        s["global"]["ordre_tableau"] = position
