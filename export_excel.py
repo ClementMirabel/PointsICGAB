@@ -44,6 +44,7 @@ FILL_MIXTE = _uni("FFFFE6CC")
 CLASSEMENT_HEADERS = {"Classement", "Classement sept. S", "Classement sept. D", "Classement sept. M"}
 TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
                 "Meilleur partenaire (points)", "Meilleur partenaire (D+M, points)",
+                "Meilleur partenaire au club (si différent)", "Meilleur partenaire au club (D+M, si différent)",
                 "Ordre tableau"} | CLASSEMENT_HEADERS
 
 
@@ -170,6 +171,9 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Delta % (avec - sans)",
             "Meilleur partenaire", "Matchs avec lui/elle", "Victoires avec lui/elle",
             "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
+            "Meilleur partenaire au club (si différent)", "Matchs avec lui/elle (club)",
+            "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
+            "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
             "Meilleur partenaire (points)", "Matchs avec lui/elle (points)",
             "Points cote cumulés avec lui/elle",
         ]
@@ -201,6 +205,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
                 _pct(p["delta_pct"]),
             ]
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire"])
+            row += _fmt_meilleur_partenaire(entry["meilleur_partenaire_club"])
             row += _fmt_meilleur_partenaire_points(entry["meilleur_partenaire_points"])
         row += [_pct(entry["indice_performance"]), entry["indice_niveau"], _pct(entry["indice_global"])]
         ws.append(row)
@@ -237,6 +242,9 @@ def _write_bilan_sheet(wb, all_stats):
         "Delta % partenaire (avec - sans)",
         "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
         "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
+        "Meilleur partenaire au club (D+M, si différent)", "Matchs avec lui/elle (club)",
+        "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
+        "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
         "Meilleur partenaire (D+M, points)", "Matchs avec lui/elle (points)",
         "Points cote cumulés avec lui/elle",
         "Nb tournois individuels", "Nb interclubs (par jour)",
@@ -272,6 +280,7 @@ def _write_bilan_sheet(wb, all_stats):
             _pct(p["delta_pct"]),
         ]
         row += _fmt_meilleur_partenaire(s["meilleur_partenaire_double_mixte"])
+        row += _fmt_meilleur_partenaire(s["meilleur_partenaire_double_mixte_club"])
         row += _fmt_meilleur_partenaire_points(s["meilleur_partenaire_double_mixte_points"])
         row += [t["nb_tournois"], t["nb_interclubs"]]
 

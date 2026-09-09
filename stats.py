@@ -105,7 +105,7 @@ def _partenaires_stats(matchs):
     return resultat
 
 
-def _meilleur_partenaire_parmi(matchs, cle="indice"):
+def _meilleur_partenaire_parmi(matchs, cle="indice", club_uniquement=False):
     """Le partenaire qui ressort en tête selon `cle` :
     - "indice" (par défaut) : victoires x taux de victoire, même formule
       que indice_performance - pas de seuil arbitraire, un partenaire joué
@@ -113,8 +113,12 @@ def _meilleur_partenaire_parmi(matchs, cle="indice"):
       le volume l'emporte naturellement sur un coup de chance isolé.
     - "points_cote" : la somme des points de cote gagnés/perdus avec ce
       partenaire (un autre angle pour se recouper avec le premier).
-    None si `matchs` est vide ou si personne n'a de valeur exploitable
-    pour `cle`."""
+    club_uniquement=True restreint aux partenaires du club (GAB38) - pour
+    distinguer "meilleur partenaire au club" de "meilleur partenaire, club
+    ou pas". None si `matchs` est vide ou si personne n'a de valeur
+    exploitable pour `cle`."""
+    if club_uniquement:
+        matchs = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     partenaires = _partenaires_stats(matchs)
     champ = "indice_performance" if cle == "indice" else "points_cote_total"
     candidats = [v for v in partenaires.values() if v[champ] is not None]
@@ -123,16 +127,28 @@ def _meilleur_partenaire_parmi(matchs, cle="indice"):
     return max(candidats, key=lambda v: v[champ])
 
 
-def meilleur_partenaire(events, cle="indice"):
+def meilleur_partenaire(events, cle="indice", club_uniquement=False):
     """Double ou Mixte uniquement (un seul tableau)."""
-    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]], cle)
+    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]], cle, club_uniquement)
 
 
-def meilleur_partenaire_combine(events_double, events_mixte, cle="indice"):
+def meilleur_partenaire_combine(events_double, events_mixte, cle="indice", club_uniquement=False):
     """Double + Mixte fusionnés (le partenaire est un partenaire, peu
     importe le tableau)."""
     matchs = [m for events in (events_double, events_mixte) for e in events for m in e["matchs"]]
-    return _meilleur_partenaire_parmi(matchs, cle)
+    return _meilleur_partenaire_parmi(matchs, cle, club_uniquement)
+
+
+def meilleur_partenaire_club_si_different(overall, club):
+    """`club` (résultat de meilleur_partenaire(..., club_uniquement=True))
+    seulement si c'est une personne différente de `overall` (le meilleur
+    partenaire sans restriction) - évite d'afficher deux fois la même
+    info quand le meilleur partenaire overall est déjà au club."""
+    if not club:
+        return None
+    if overall and overall["nom"] == club["nom"]:
+        return None
+    return club
 
 
 def ordre_disciplines(par_tableau):
@@ -286,6 +302,8 @@ def build_player_stats(player, events_par_tableau):
             entry["partenaire"] = discipline_stats_partenaire(events)
             entry["meilleur_partenaire"] = meilleur_partenaire(events)
             entry["meilleur_partenaire_points"] = meilleur_partenaire(events, cle="points_cote")
+            entry["meilleur_partenaire_club"] = meilleur_partenaire_club_si_different(
+                entry["meilleur_partenaire"], meilleur_partenaire(events, club_uniquement=True))
         par_tableau[tableau] = entry
 
     partenaire_double_mixte = discipline_stats_partenaire_combinee(
@@ -294,6 +312,10 @@ def build_player_stats(player, events_par_tableau):
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
     meilleur_partenaire_dm_points = meilleur_partenaire_combine(
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []), cle="points_cote")
+    meilleur_partenaire_dm_club = meilleur_partenaire_club_si_different(
+        meilleur_partenaire_dm,
+        meilleur_partenaire_combine(events_par_tableau.get("Double", []),
+                                     events_par_tableau.get("Mixte", []), club_uniquement=True))
 
     tous_matchs = [m for events in events_par_tableau.values() for e in events for m in e["matchs"]]
     stats_globales = _agg_matchs(tous_matchs)
@@ -320,6 +342,7 @@ def build_player_stats(player, events_par_tableau):
         "partenaire_double_mixte": partenaire_double_mixte,
         "meilleur_partenaire_double_mixte": meilleur_partenaire_dm,
         "meilleur_partenaire_double_mixte_points": meilleur_partenaire_dm_points,
+        "meilleur_partenaire_double_mixte_club": meilleur_partenaire_dm_club,
         "ordre_disciplines": ordre_disciplines(par_tableau),
         "progression": diff_classement(player),
         "global": {
