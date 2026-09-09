@@ -59,14 +59,12 @@ def login(driver, licence, password):
     driver.get("https://myffbad.fr/")
     dismiss_rgpd_banner(driver)
     try:
-        WebDriverWait(driver, 20).until(
+        form = WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "section[data-testid='sign-in-form']")))
-        licence_input = WebDriverWait(driver, 10).until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, "input[name='licence']")))
-        licence_input.send_keys(licence)
-        driver.find_element(By.CSS_SELECTOR, "input[name='password']").send_keys(password)
-        driver.find_element(By.CSS_SELECTOR, "input[type='checkbox']").click()
-        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+        form.find_element(By.CSS_SELECTOR, "input[name='licence']").send_keys(licence)
+        form.find_element(By.CSS_SELECTOR, "input[name='password']").send_keys(password)
+        form.find_element(By.CSS_SELECTOR, "input[type='checkbox']").click()
+        form.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
         WebDriverWait(driver, 20).until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, "div[data-testid='widgets-grid']")))
         return True
