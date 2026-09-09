@@ -165,6 +165,16 @@ def build_player_stats(player, events_par_tableau):
 
     tournois = build_tournois(events_par_tableau)
 
+    # un enregistrement par match (tableau, mois, victoire), pour la
+    # ventilation mensuelle club-wide (onglet Stats club) - inutile de
+    # stocker le sexe ici, on l'a déjà au niveau du joueur.
+    match_log = [
+        {"tableau": tableau, "mois": parse_date_fr(e["date"]).strftime("%Y-%m"), "victoire": m["victoire"]}
+        for tableau, events in events_par_tableau.items()
+        for e in events
+        for m in e["matchs"]
+    ]
+
     return {
         "Licence": player["Licence"],
         "Nom": player["Nom"],
@@ -172,9 +182,28 @@ def build_player_stats(player, events_par_tableau):
         "par_tableau": par_tableau,
         "global": {
             **stats_globales,
+            "meilleur_tableau": player["Meilleur tableau"],
             "indice_niveau": niveau_global,
             "indice_performance_brut": perf_globale,
             "indice_global_brut": indice_global(perf_globale, niveau_global),
         },
         "tournois": tournois,
+        "match_log": match_log,
     }
+
+
+def normaliser_club(all_stats):
+    """Normalise les indices bruts en % du max observé dans le club (une
+    fois tous les joueurs traités), par tableau et au global. Modifie
+    all_stats en place (ajoute indice_performance/indice_global à côté des
+    valeurs _brut) et renvoie les maxima bruts observés."""
+    maxima = {}
+    for tableau in ("Simple", "Double", "Mixte"):
+        entries = [s["par_tableau"][tableau] for s in all_stats]
+        maxima[f"{tableau} - performance"] = normaliser(entries, "indice_performance_brut", "indice_performance")
+        maxima[f"{tableau} - global"] = normaliser(entries, "indice_global_brut", "indice_global")
+
+    globaux = [s["global"] for s in all_stats]
+    maxima["Global - performance"] = normaliser(globaux, "indice_performance_brut", "indice_performance")
+    maxima["Global - global"] = normaliser(globaux, "indice_global_brut", "indice_global")
+    return maxima
