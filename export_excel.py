@@ -143,9 +143,9 @@ def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
 
 def _fmt_meilleur_partenaire(mp):
     if not mp:
-        return [None, None, None, None, None]
+        return [None, None, None, None, None, None]
     return [mp["nom"], mp["matchs_joues"], mp["victoires"], _pct(mp["pct_victoire"]),
-            round(mp["indice_performance"], 2)]
+            round(mp["indice_performance"], 2), mp.get("points_cote_total")]
 
 
 def _fmt_meilleur_partenaire_points(mp):
@@ -169,7 +169,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Matchs sans partenaire club", "% sans partenaire club",
             "Delta % (avec - sans)",
             "Meilleur partenaire", "Matchs avec lui/elle", "Victoires avec lui/elle",
-            "% victoire avec lui/elle", "Indice perf. avec lui/elle",
+            "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
             "Meilleur partenaire (points)", "Matchs avec lui/elle (points)",
             "Points cote cumulés avec lui/elle",
         ]
@@ -236,7 +236,7 @@ def _write_bilan_sheet(wb, all_stats):
         "Matchs sans partenaire club (D+M)", "% sans partenaire club",
         "Delta % partenaire (avec - sans)",
         "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
-        "% victoire avec lui/elle", "Indice perf. avec lui/elle",
+        "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
         "Meilleur partenaire (D+M, points)", "Matchs avec lui/elle (points)",
         "Points cote cumulés avec lui/elle",
         "Nb tournois individuels", "Nb interclubs (par jour)",
