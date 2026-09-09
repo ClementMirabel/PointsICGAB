@@ -53,21 +53,53 @@ def discipline_stats(events):
     return _agg_matchs([m for e in events for m in e["matchs"]])
 
 
-def discipline_stats_partenaire(events):
-    """Double/Mixte uniquement : split selon que le partenaire est du club
-    (GAB38) ou non, + différence de % de victoire entre les deux."""
-    matchs = [m for e in events for m in e["matchs"]]
+def _split_partenaire(matchs):
     avec_club = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     hors_club = [m for m in matchs
                  if m["partenaire_club"] is not None and m["partenaire_club"] != results.MY_CLUB]
-
-    avec = _agg_matchs(avec_club)
-    hors = _agg_matchs(hors_club)
+    avec, hors = _agg_matchs(avec_club), _agg_matchs(hors_club)
     return {
         "avec_partenaire_club": avec,
         "sans_partenaire_club": hors,
         "delta_pct": avec["pct_victoire"] - hors["pct_victoire"],
     }
+
+
+def discipline_stats_partenaire(events):
+    """Double ou Mixte : split selon que le partenaire est du club (GAB38)
+    ou non, + différence de % de victoire entre les deux."""
+    return _split_partenaire([m for e in events for m in e["matchs"]])
+
+
+def discipline_stats_partenaire_combinee(events_double, events_mixte):
+    """Même chose mais Double + Mixte fusionnés (le partenaire est un
+    partenaire, peu importe le tableau)."""
+    matchs = [m for events in (events_double, events_mixte) for e in events for m in e["matchs"]]
+    return _split_partenaire(matchs)
+
+
+def diff_classement(player):
+    """Progression de cote entre le 1er septembre (player["Cote 1er
+    septembre"], rempli par statsJoueurs.scrape_player) et la cote actuelle
+    (roster), par tableau + cumulée sur les 3. diff_relatif = diff / cote de
+    septembre (progression relative depuis le début de saison)."""
+    sept = player.get("Cote 1er septembre") or {}
+    resultat = {}
+    total_diff = total_sept = 0.0
+    for tableau in ("Simple", "Double", "Mixte"):
+        actuel = player["Points Actuel"][tableau]
+        s = sept.get(tableau)
+        diff = (actuel - s) if s is not None else None
+        diff_rel = (diff / s) if (s is not None and s != 0) else None
+        resultat[tableau] = {"septembre": s, "actuel": actuel, "diff": diff, "diff_relatif": diff_rel}
+        if s is not None:
+            total_diff += diff
+            total_sept += s
+    resultat["cumule"] = {
+        "diff": total_diff,
+        "diff_relatif": (total_diff / total_sept) if total_sept else None,
+    }
+    return resultat
 
 
 def indice_performance(stats):
@@ -150,6 +182,7 @@ def build_player_stats(player, events_par_tableau):
         entry = {
             **stats,
             "classement": classement,
+            "cote": player["Points Actuel"][tableau],
             "indice_niveau": niveau,
             "indice_performance_brut": perf,
             "indice_global_brut": indice_global(perf, niveau),
@@ -157,6 +190,9 @@ def build_player_stats(player, events_par_tableau):
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)
         par_tableau[tableau] = entry
+
+    partenaire_double_mixte = discipline_stats_partenaire_combinee(
+        events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
 
     tous_matchs = [m for events in events_par_tableau.values() for e in events for m in e["matchs"]]
     stats_globales = _agg_matchs(tous_matchs)
@@ -180,9 +216,13 @@ def build_player_stats(player, events_par_tableau):
         "Nom": player["Nom"],
         "Sexe": player["Sexe"],
         "par_tableau": par_tableau,
+        "partenaire_double_mixte": partenaire_double_mixte,
+        "progression": diff_classement(player),
         "global": {
             **stats_globales,
             "meilleur_tableau": player["Meilleur tableau"],
+            "rang_meilleur_tableau": player.get("Rang meilleur tableau"),
+            "points_meilleur_tableau": player["Points meilleur tableau"],
             "indice_niveau": niveau_global,
             "indice_performance_brut": perf_globale,
             "indice_global_brut": indice_global(perf_globale, niveau_global),
@@ -207,3 +247,18 @@ def normaliser_club(all_stats):
     maxima["Global - performance"] = normaliser(globaux, "indice_performance_brut", "indice_performance")
     maxima["Global - global"] = normaliser(globaux, "indice_global_brut", "indice_global")
     return maxima
+
+
+def compute_ordre_tableau(all_stats):
+    """Classe tous les joueurs du club : meilleur tableau (N1 > N2 > ...),
+    puis en cas d'égalité leur position dans ce tableau (rang club), puis en
+    cas d'égalité (rare) leur cote. Ajoute s["global"]["ordre_tableau"] =
+    position 1..N (modifie all_stats en place)."""
+    def key(s):
+        g = s["global"]
+        tier = roster.TABLEAUX.index(g["meilleur_tableau"])
+        rang = g["rang_meilleur_tableau"] if g["rang_meilleur_tableau"] is not None else 10 ** 9
+        return (tier, rang, -g["points_meilleur_tableau"])
+
+    for position, s in enumerate(sorted(all_stats, key=key), start=1):
+        s["global"]["ordre_tableau"] = position
