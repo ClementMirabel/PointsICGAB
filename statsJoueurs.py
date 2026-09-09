@@ -278,6 +278,7 @@ def main(licence_filter):
         sys.exit(1)
 
     stats.normaliser_club(all_stats)
+    stats.compute_ordre_tableau(all_stats)
     output_path = os.path.join(APP_DIR, "statsJoueurs.xlsx")
     export_excel.write_stats_excel(all_stats, output_path)
     print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}")
