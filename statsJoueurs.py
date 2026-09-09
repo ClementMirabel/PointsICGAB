@@ -96,8 +96,13 @@ def click_buttons_by_text(driver, text):
     Progression). Renvoie le nombre de boutons cliqués."""
     n = 0
     for btn in driver.find_elements(By.CSS_SELECTOR, "button[data-testid='button']"):
-        if btn.text.strip() == text:
+        # .text ne lit que le texte visible à l'écran (souvent vide pour un
+        # bouton hors viewport en headless) ; textContent lit le DOM, fiable
+        # peu importe le scroll.
+        label = (btn.get_attribute("textContent") or "").strip()
+        if label == text:
             try:
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
                 click(driver, btn)
                 n += 1
             except Exception as e:
@@ -125,13 +130,15 @@ def dump_player_debug(driver, licence):
     dump_html(driver, licence, "simple")
 
     # bascule le graphique "Nombre de points / Classement" en vue tableau
-    click_buttons_by_text(driver, "Journal de suivi")
+    n = click_buttons_by_text(driver, "Journal de suivi")
+    print(f"  'Journal de suivi' : {n} bouton(s) cliqué(s)")
     dump_html(driver, licence, "journal")
 
     # bascule tous les groupes Simple/Double/Mixte de la page (Résultats,
     # classement, progression) sur Double puis Mixte, un dump par état
     for tableau in ("Double", "Mixte"):
-        click_buttons_by_text(driver, tableau)
+        n = click_buttons_by_text(driver, tableau)
+        print(f"  '{tableau}' : {n} bouton(s) cliqué(s)")
         dump_html(driver, licence, tableau.lower())
 
 
