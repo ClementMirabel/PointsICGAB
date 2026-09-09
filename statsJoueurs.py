@@ -221,19 +221,38 @@ def _current_season_start_year(today=None):
     return today.year if today.month >= 9 else today.year - 1
 
 
-def _parse_results_with_retry(driver, tentatives=3, pause=0.7):
-    """results.parse_results, avec un filet de sécurité : si des événements
-    sont trouvés mais aucun match dedans, c'est probablement que le rendu
-    du détail (row-details) n'était pas encore terminé au moment du
-    snapshot - on retente avant de conclure "vraiment aucun match"."""
+def _parse_results_with_retry(driver, tentatives=4, pause=0.8):
+    """results.parse_results, avec un filet de sécurité : si la section est
+    encore vide (0 événement - le rendu n'a peut-être pas fini de monter),
+    ou si des événements sont trouvés mais aucun match dedans (le détail
+    n'a peut-être pas fini de charger), on retente avant de conclure
+    "vraiment aucune donnée". Coûte quelques dixièmes de seconde de plus
+    pour un tableau réellement vide (ex: joueur qui n'a jamais joué de
+    Mixte), mais évite de perdre silencieusement des joueurs entiers -
+    constaté : jusqu'à 16 joueurs sur 73 revenaient vides dans Bilan
+    joueur avec l'ancienne version qui ne retentait pas sur "0 événement"."""
     events = []
-    for _ in range(tentatives):
+    for tentative in range(tentatives):
         events = results.parse_results(_soup(driver))
         nb_matchs = sum(len(e["matchs"]) for e in events)
-        if not events or nb_matchs > 0:
+        if events and nb_matchs > 0:
             return events
-        time.sleep(pause)
+        if tentative < tentatives - 1:
+            time.sleep(pause)
     return events
+
+
+def _parse_evolution_with_retry(driver, tentatives=4, pause=0.8):
+    """Même filet de sécurité que _parse_results_with_retry, pour le panel
+    Évolution classement (aucune protection avant ce correctif)."""
+    evolution = []
+    for tentative in range(tentatives):
+        evolution = results.parse_classement_evolution(_soup(driver))
+        if evolution:
+            return evolution
+        if tentative < tentatives - 1:
+            time.sleep(pause)
+    return evolution
 
 
 def scrape_player(driver, player):
@@ -272,7 +291,7 @@ def scrape_player(driver, player):
     except TimeoutException:
         print("  chargement trop long (classement-historique), on continue quand même.")
     expand_section_by_text(driver, "Évolution classement")
-    evolution = results.parse_classement_evolution(_soup(driver))
+    evolution = _parse_evolution_with_retry(driver)
     player["Classement 1er septembre"] = results.find_september_1(evolution, _current_season_start_year())
 
     return events
