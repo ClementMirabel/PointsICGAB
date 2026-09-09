@@ -59,9 +59,16 @@ def login(driver, licence, password):
     driver.get("https://myffbad.fr/")
     dismiss_rgpd_banner(driver)
     try:
-        form = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "section[data-testid='sign-in-form']")))
-        form.find_element(By.CSS_SELECTOR, "input[name='licence']").send_keys(licence)
+        # attend que le champ soit vraiment cliquable (pas juste présent dans le
+        # DOM) : juste après la fermeture de la bannière RGPD, une transition
+        # CSS peut encore être en cours et rendre le formulaire non interactif
+        # un court instant. Sélecteur scopé au formulaire pour rester sur LE
+        # bon champ (il peut y avoir d'autres formulaires/boutons sur la page).
+        licence_input = WebDriverWait(driver, 20).until(EC.element_to_be_clickable(
+            (By.CSS_SELECTOR, "section[data-testid='sign-in-form'] input[name='licence']")))
+        licence_input.send_keys(licence)
+
+        form = driver.find_element(By.CSS_SELECTOR, "section[data-testid='sign-in-form']")
         form.find_element(By.CSS_SELECTOR, "input[name='password']").send_keys(password)
         form.find_element(By.CSS_SELECTOR, "input[type='checkbox']").click()
         form.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
