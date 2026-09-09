@@ -62,6 +62,11 @@ def login(driver, licence, password):
         return False
 
 
+def click(driver, element):
+    driver.execute_script("arguments[0].click();", element)
+    time.sleep(1)  # laisse le temps au contenu de charger après le clic
+
+
 def expand_all_sections(driver):
     """Déplie chaque section repliable (Résultats, classement, ...)."""
     count = len(driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']"))
@@ -70,10 +75,32 @@ def expand_all_sections(driver):
         if i >= len(items):
             break
         try:
-            driver.execute_script("arguments[0].click();", items[i])
+            click(driver, items[i])
         except Exception as e:
             print(f"  clic section {i} : {e}")
-        time.sleep(1)  # laisse le temps au contenu de charger après le clic
+
+
+def click_buttons_by_text(driver, text):
+    """Clique tous les boutons portant ce texte (plusieurs groupes Simple/Double/
+    Mixte coexistent sur la page : Résultats, Nombre de points/Classement,
+    Progression). Renvoie le nombre de boutons cliqués."""
+    n = 0
+    for btn in driver.find_elements(By.CSS_SELECTOR, "button[data-testid='button']"):
+        if btn.text.strip() == text:
+            try:
+                click(driver, btn)
+                n += 1
+            except Exception as e:
+                print(f"  clic bouton '{text}' : {e}")
+    return n
+
+
+def dump_html(driver, licence, suffix):
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+    path = os.path.join(DEBUG_DIR, f"joueur_{licence}_{suffix}.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+    print(f"-> {path}")
 
 
 def dump_player_debug(driver, licence):
@@ -85,12 +112,17 @@ def dump_player_debug(driver, licence):
         print(f"  page joueur {licence} : chargement trop long, on continue quand même.")
 
     expand_all_sections(driver)
+    dump_html(driver, licence, "simple")
 
-    os.makedirs(DEBUG_DIR, exist_ok=True)
-    path = os.path.join(DEBUG_DIR, f"joueur_{licence}.html")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(driver.page_source)
-    print(f"-> {path}")
+    # bascule le graphique "Nombre de points / Classement" en vue tableau
+    click_buttons_by_text(driver, "Journal de suivi")
+    dump_html(driver, licence, "journal")
+
+    # bascule tous les groupes Simple/Double/Mixte de la page (Résultats,
+    # classement, progression) sur Double puis Mixte, un dump par état
+    for tableau in ("Double", "Mixte"):
+        click_buttons_by_text(driver, tableau)
+        dump_html(driver, licence, tableau.lower())
 
 
 if __name__ == "__main__":
