@@ -61,11 +61,14 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
 
 
 def _fmt_progression(bloc):
-    """septembre / actuel / diff / diff relative (%) pour un tableau."""
-    diff, diff_rel = bloc["diff"], bloc["diff_relatif"]
+    """classement/place/cote de septembre, place/cote actuelle, gain de
+    places, diff de cote et diff relative (%) pour un tableau."""
+    diff_points, diff_rel = bloc["diff_points"], bloc["diff_relatif"]
     return [
-        bloc["septembre"], bloc["actuel"],
-        round(diff, 1) if diff is not None else None,
+        bloc["septembre_classement"], bloc["septembre_rang"], bloc["septembre_points"],
+        bloc["actuel_rang"], bloc["actuel_points"],
+        bloc["gain_places"],
+        round(diff_points, 1) if diff_points is not None else None,
         round(diff_rel * 100, 1) if diff_rel is not None else None,
     ]
 
@@ -82,10 +85,13 @@ def _write_bilan_sheet(wb, all_stats):
         "Matchs sans partenaire club (D+M)", "% sans partenaire club",
         "Delta % partenaire (avec - sans)",
         "Nb tournois individuels", "Nb interclubs (par jour)",
-        "Cote sept. S", "Cote actuelle S", "Diff S", "Diff relative S (%)",
-        "Cote sept. D", "Cote actuelle D", "Diff D", "Diff relative D (%)",
-        "Cote sept. M", "Cote actuelle M", "Diff M", "Diff relative M (%)",
-        "Diff cumulée", "Diff relative cumulée (%)",
+        "Classement sept. S", "Place sept. S", "Cote sept. S", "Place actuelle S", "Cote actuelle S",
+        "Gain places S", "Diff cote S", "Diff relative S (%)",
+        "Classement sept. D", "Place sept. D", "Cote sept. D", "Place actuelle D", "Cote actuelle D",
+        "Gain places D", "Diff cote D", "Diff relative D (%)",
+        "Classement sept. M", "Place sept. M", "Cote sept. M", "Place actuelle M", "Cote actuelle M",
+        "Gain places M", "Diff cote M", "Diff relative M (%)",
+        "Diff cote cumulée", "Diff relative cumulée (%)",
         "Indice performance", "Indice niveau", "Indice global",
     ])
 
@@ -112,7 +118,7 @@ def _write_bilan_sheet(wb, all_stats):
         row += _fmt_progression(prog["Double"])
         row += _fmt_progression(prog["Mixte"])
         row += [
-            round(cum["diff"], 1) if cum["diff"] is not None else None,
+            round(cum["diff_points"], 1) if cum["diff_points"] is not None else None,
             round(cum["diff_relatif"] * 100, 1) if cum["diff_relatif"] is not None else None,
         ]
         row += [_pct(g["indice_performance"]), g["indice_niveau"], _pct(g["indice_global"])]

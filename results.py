@@ -1,13 +1,21 @@
 """
 Parsing des sections de la page joueur qui nécessitent une connexion
-(Résultats de la saison, Journal de suivi / classement au 1er septembre).
+(Résultats de la saison, Évolution du classement).
 
 Ces fonctions travaillent sur du HTML déjà chargé (BeautifulSoup), obtenu
 via Selenium après connexion (voir statsJoueurs.py). Le format est validé
 contre des dumps réels enregistrés dans debug/ (voir tests_results.py).
 """
+import re
+from datetime import date
 
 MY_CLUB = "GAB38"
+
+
+def _parse_date_slash(text):
+    """'01/09/2026' -> date(2026, 9, 1)."""
+    jour, mois, annee = text.split("/")
+    return date(int(annee), int(mois), int(jour))
 
 
 def parse_journal_cote(soup):
@@ -36,6 +44,57 @@ def parse_journal_cote(soup):
             except ValueError:
                 return None
     return None
+
+
+def parse_classement_evolution(soup):
+    """Panel "Évolution classement" (data-testid='player-classement-
+    evolution', page /joueur/<licence>/classement-historique) -> liste de
+    {date, Simple: {rang, classement, points}, Double: {...}, Mixte: {...}}
+    triée du plus récent au plus ancien (ordre du site). Identique quel que
+    soit l'état des boutons Simple/Double/Mixte de la page (vérifié) : les
+    3 tableaux sont toujours présents sur chaque ligne."""
+    section = soup.find(attrs={"data-testid": "player-classement-evolution"})
+    if section is None:
+        return []
+    table = section.find(attrs={"data-testid": "table"})
+    if table is None:
+        return []
+    tbody = table.find("tbody")
+    if tbody is None:
+        return []
+
+    entries = []
+    for row in tbody.find_all("tr"):
+        cells = row.find_all("td")
+        if len(cells) < 4:
+            continue
+        try:
+            entry = {"date": _parse_date_slash(cells[0].get_text(strip=True))}
+        except ValueError:
+            continue
+
+        for i, tableau in enumerate(("Simple", "Double", "Mixte"), start=1):
+            texte = cells[i].get_text(" ", strip=True)
+            badge = cells[i].find(attrs={"data-testid": "badge-ranking"})
+            rang = None
+            premier_mot = texte.split(" ", 1)[0] if texte else ""
+            if premier_mot.isdigit():
+                rang = int(premier_mot)
+            points_match = re.search(r"([\d.]+)\s*points", texte)
+            entry[tableau] = {
+                "rang": rang,
+                "classement": badge.get_text(strip=True) if badge else None,
+                "points": float(points_match.group(1)) if points_match else None,
+            }
+        entries.append(entry)
+    return entries
+
+
+def find_september_1(entries, annee):
+    """Ligne du 1er septembre <annee> (départ de saison) dans la liste
+    renvoyée par parse_classement_evolution, ou None si absente."""
+    cible = date(annee, 9, 1)
+    return next((e for e in entries if e["date"] == cible), None)
 
 
 def _parse_score(score_table, mine_idx):

@@ -79,25 +79,53 @@ def discipline_stats_partenaire_combinee(events_double, events_mixte):
 
 
 def diff_classement(player):
-    """Progression de cote entre le 1er septembre (player["Cote 1er
-    septembre"], rempli par statsJoueurs.scrape_player) et la cote actuelle
-    (roster), par tableau + cumulée sur les 3. diff_relatif = diff / cote de
-    septembre (progression relative depuis le début de saison)."""
-    sept = player.get("Cote 1er septembre") or {}
+    """Progression entre le 1er septembre (player["Classement 1er
+    septembre"], rempli par statsJoueurs.scrape_player via
+    results.parse_classement_evolution + find_september_1 : {"Simple":
+    {"rang","classement","points"}, "Double": {...}, "Mixte": {...}}) et
+    l'actuel (roster), par tableau + cumulé sur les 3.
+
+    - diff_points = cote actuelle - cote de septembre, diff_relatif = ce
+      diff / cote de septembre (progression relative depuis le début de
+      saison).
+    - gain_places = rang de septembre - rang actuel : positif = a gagné des
+      places (un rang plus PETIT est meilleur, donc rang qui baisse)."""
+    sept = player.get("Classement 1er septembre") or {}
+    rang_actuel = player.get("Rang Actuel") or {}
+
     resultat = {}
-    total_diff = total_sept = 0.0
+    total_diff_points = total_sept_points = 0.0
     for tableau in ("Simple", "Double", "Mixte"):
-        actuel = player["Points Actuel"][tableau]
-        s = sept.get(tableau)
-        diff = (actuel - s) if s is not None else None
-        diff_rel = (diff / s) if (s is not None and s != 0) else None
-        resultat[tableau] = {"septembre": s, "actuel": actuel, "diff": diff, "diff_relatif": diff_rel}
-        if s is not None:
-            total_diff += diff
-            total_sept += s
+        actuel_points = player["Points Actuel"][tableau]
+        actuel_rang = rang_actuel.get(tableau)
+        s = sept.get(tableau)  # {"rang","classement","points"} ou None
+
+        diff_points = diff_rel = None
+        if s is not None and s.get("points") is not None:
+            diff_points = actuel_points - s["points"]
+            diff_rel = (diff_points / s["points"]) if s["points"] else None
+
+        gain_places = None
+        if s is not None and s.get("rang") is not None and actuel_rang is not None:
+            gain_places = s["rang"] - actuel_rang
+
+        resultat[tableau] = {
+            "septembre_classement": s.get("classement") if s else None,
+            "septembre_rang": s.get("rang") if s else None,
+            "septembre_points": s.get("points") if s else None,
+            "actuel_rang": actuel_rang,
+            "actuel_points": actuel_points,
+            "diff_points": diff_points,
+            "diff_relatif": diff_rel,
+            "gain_places": gain_places,
+        }
+        if diff_points is not None:
+            total_diff_points += diff_points
+            total_sept_points += s["points"]
+
     resultat["cumule"] = {
-        "diff": total_diff,
-        "diff_relatif": (total_diff / total_sept) if total_sept else None,
+        "diff_points": total_diff_points,
+        "diff_relatif": (total_diff_points / total_sept_points) if total_sept_points else None,
     }
     return resultat
 

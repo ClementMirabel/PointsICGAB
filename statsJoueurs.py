@@ -13,6 +13,7 @@ mot de passe via MYFFBAD_LICENCE/MYFFBAD_PASSWORD, ou saisie interactive.
 import os
 import sys
 import time
+from datetime import date
 from getpass import getpass
 
 from bs4 import BeautifulSoup
@@ -187,10 +188,20 @@ def _soup(driver):
     return BeautifulSoup(driver.page_source, "html.parser")
 
 
+def _current_season_start_year(today=None):
+    """La saison FFBad démarre le 1er septembre : avant cette date on est
+    encore dans la saison qui a commencé l'année précédente."""
+    today = today or date.today()
+    return today.year if today.month >= 9 else today.year - 1
+
+
 def scrape_player(driver, player):
-    """Scrape la page d'un joueur du roster : résultats des 3 tableaux +
-    cote au 1er septembre. Complète player["Cote 1er septembre"] et renvoie
-    events_par_tableau (voir stats.build_tournois)."""
+    """Scrape la page d'un joueur du roster : résultats des 3 tableaux
+    (page principale) + classement/place/points au 1er septembre (page
+    classement-historique, panel "Évolution classement" - identique quel
+    que soit l'état des boutons Simple/Double/Mixte). Complète
+    player["Classement 1er septembre"] et renvoie events_par_tableau (voir
+    stats.build_tournois)."""
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}")
     try:
         WebDriverWait(driver, 15).until(EC.presence_of_element_located(
@@ -201,20 +212,22 @@ def scrape_player(driver, player):
     expand_all_sections(driver)
     events = {"Simple": results.parse_results(_soup(driver))}
 
-    click_buttons_by_text(driver, "Journal de suivi")
-    cote_sept = {"Simple": results.parse_journal_cote(_soup(driver))}
-
     click_buttons_by_text(driver, "Double")
-    soup = _soup(driver)
-    events["Double"] = results.parse_results(soup)
-    cote_sept["Double"] = results.parse_journal_cote(soup)
+    events["Double"] = results.parse_results(_soup(driver))
 
     click_buttons_by_text(driver, "Mixte")
-    soup = _soup(driver)
-    events["Mixte"] = results.parse_results(soup)
-    cote_sept["Mixte"] = results.parse_journal_cote(soup)
+    events["Mixte"] = results.parse_results(_soup(driver))
 
-    player["Cote 1er septembre"] = cote_sept
+    driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
+    try:
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
+    except TimeoutException:
+        print("  chargement trop long (classement-historique), on continue quand même.")
+    expand_all_sections(driver)
+    evolution = results.parse_classement_evolution(_soup(driver))
+    player["Classement 1er septembre"] = results.find_september_1(evolution, _current_season_start_year())
+
     return events
 
 
