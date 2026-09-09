@@ -90,7 +90,7 @@ def login(driver, licence, password):
         return False
 
 
-CLICK_PAUSE = 0.4  # laisse le temps au re-rendu React après un clic
+CLICK_PAUSE = 1  # laisse le temps au re-rendu React après un clic
 
 
 def click(driver, element):
@@ -221,6 +221,21 @@ def _current_season_start_year(today=None):
     return today.year if today.month >= 9 else today.year - 1
 
 
+def _parse_results_with_retry(driver, tentatives=3, pause=0.7):
+    """results.parse_results, avec un filet de sécurité : si des événements
+    sont trouvés mais aucun match dedans, c'est probablement que le rendu
+    du détail (row-details) n'était pas encore terminé au moment du
+    snapshot - on retente avant de conclure "vraiment aucun match"."""
+    events = []
+    for _ in range(tentatives):
+        events = results.parse_results(_soup(driver))
+        nb_matchs = sum(len(e["matchs"]) for e in events)
+        if not events or nb_matchs > 0:
+            return events
+        time.sleep(pause)
+    return events
+
+
 def scrape_player(driver, player):
     """Scrape la page d'un joueur du roster : résultats des 3 tableaux
     (page principale) + classement/place/points au 1er septembre (page
@@ -239,16 +254,16 @@ def scrape_player(driver, player):
     # points/Classement, Ratio victoires/défaites et Progression ne sont
     # plus utilisés depuis le passage à la page classement-historique)
     expand_section_by_text(driver, "Résultats")
-    events = {"Simple": results.parse_results(_soup(driver))}
+    events = {"Simple": _parse_results_with_retry(driver)}
 
     # limité à player-results : les autres groupes Simple/Double/Mixte de
     # la page (Nombre de points/Classement, Progression) n'ont plus besoin
     # d'être basculés
     click_buttons_by_text(driver, "Double", container_testid="player-results")
-    events["Double"] = results.parse_results(_soup(driver))
+    events["Double"] = _parse_results_with_retry(driver)
 
     click_buttons_by_text(driver, "Mixte", container_testid="player-results")
-    events["Mixte"] = results.parse_results(_soup(driver))
+    events["Mixte"] = _parse_results_with_retry(driver)
 
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
     try:
