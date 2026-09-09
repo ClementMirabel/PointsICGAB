@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 import openpyxl
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 DISCIPLINE_SHEETS = [
@@ -39,20 +39,28 @@ FILL_SIMPLE = _uni("FFD5E8D4")
 FILL_DOUBLE = _uni("FFDAE8FC")
 FILL_MIXTE = _uni("FFFFE6CC")
 
+BORDURE_GROUPE = Side(style="medium", color="FF999999")
+
 # colonnes texte qu'on ne colore pas en dégradé (déjà colorées autrement,
 # ou pas un indicateur de performance)
 CLASSEMENT_HEADERS = {"Classement", "Classement sept. S", "Classement sept. D", "Classement sept. M"}
 TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
-                "Meilleur partenaire (points)", "Meilleur partenaire (D+M, points)",
-                "Meilleur partenaire au club (si différent)", "Meilleur partenaire au club (D+M, si différent)",
-                "Ordre tableau"} | CLASSEMENT_HEADERS
+                "Meilleur partenaire au club (si différent)", "Ordre tableau"} | CLASSEMENT_HEADERS
+
+
+def _est_colonne_delta_partenaire(header):
+    """Delta % avec/sans partenaire du club : presque toujours proche de 0
+    ou positif, une simple barre verte suffit (pas besoin d'un dégradé
+    rouge-blanc-vert par-dessus)."""
+    return "Delta" in header
 
 
 def _est_colonne_diff(header):
-    """Colonnes pouvant être négatives (delta/diff/gain de places) : dégradé
-    divergent rouge-blanc-vert centré sur 0, plutôt que le dégradé blanc->vert
-    habituel (qui n'aurait pas de sens sur une échelle qui traverse 0)."""
-    return "Delta" in header or "Diff" in header or "Gain places" in header
+    """Colonnes pouvant être négatives (diff cote/relative, gain de places) :
+    dégradé divergent rouge-blanc-vert centré sur 0, plutôt que le dégradé
+    blanc->vert habituel (qui n'aurait pas de sens sur une échelle qui
+    traverse 0)."""
+    return "Diff" in header or "Gain places" in header
 
 
 def _pct(value):
@@ -96,11 +104,25 @@ def _degrade(ws, col_idx, first_row, last_row):
     ws.conditional_formatting.add(plage, rule)
 
 
+def _barre_verte(ws, col_idx, first_row, last_row):
+    """Barre de données verte "classique" (une seule couleur, longueur
+    proportionnelle à la valeur) - pour le delta % avec/sans partenaire du
+    club : un dégradé rouge-blanc-vert par-dessus une barre bleue rendait la
+    colonne difficile à lire pour un delta qui reste presque toujours proche
+    de 0 ou positif."""
+    if last_row < first_row:
+        return
+    col = get_column_letter(col_idx)
+    plage = f"{col}{first_row}:{col}{last_row}"
+    ws.conditional_formatting.add(plage, DataBarRule(
+        start_type="min", end_type="max", color="FF63BE7B", showValue=True))
+
+
 def _degrade_diverge(ws, col_idx, first_row, last_row):
-    """Rouge (négatif) -> blanc (zéro) -> vert (positif), avec des barres de
-    données par-dessus - pour les colonnes delta/diff qui peuvent être
-    négatives (un dégradé blanc->vert n'aurait pas de sens ici : le "bas"
-    de l'échelle doit se voir comme mauvais, pas juste "moins vert")."""
+    """Rouge (négatif) -> blanc (zéro) -> vert (positif), sans barre de
+    données par-dessus (une barre en plus du dégradé rendait la colonne
+    difficile à lire) - pour gain de places / diff cote / diff relative, qui
+    peuvent être négatives."""
     if last_row < first_row:
         return
     col = get_column_letter(col_idx)
@@ -111,14 +133,13 @@ def _degrade_diverge(ws, col_idx, first_row, last_row):
         end_type="max", end_color="FF63BE7B",
     )
     ws.conditional_formatting.add(plage, couleurs)
-    barres = DataBarRule(start_type="min", end_type="max", color="638EC6", showValue=True)
-    ws.conditional_formatting.add(plage, barres)
 
 
 def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
     """Classements colorés par tableau, dégradé de performance sur les
-    autres colonnes numériques (divergent pour les deltas), % affiché avec
-    un signe pourcentage - une seule fois toutes les lignes écrites."""
+    autres colonnes numériques (divergent pour les diffs, barre verte pour
+    le delta partenaire), % affiché avec un signe pourcentage - une seule
+    fois toutes les lignes écrites."""
     for idx, header in enumerate(headers, start=1):
         if header in CLASSEMENT_HEADERS:
             _colorer_classement(ws, idx, first_row, last_row)
@@ -126,6 +147,8 @@ def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
             _colorer_ordre_tableau(ws, idx, first_row, last_row)
         elif header in TEXT_HEADERS:
             pass
+        elif _est_colonne_delta_partenaire(header):
+            _barre_verte(ws, idx, first_row, last_row)
         elif _est_colonne_diff(header):
             _degrade_diverge(ws, idx, first_row, last_row)
         else:
@@ -140,6 +163,44 @@ def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
                 ws[f"{col}{row}"].number_format = '0.0"%"'
 
 
+def _grouper(headers, *paires):
+    """paires : (premier_header, dernier_header) de chaque groupe de
+    colonnes à encadrer -> liste de (première_colonne, dernière_colonne),
+    1-indexées comme Excel."""
+    groupes = []
+    for debut, fin in paires:
+        i0 = headers.index(debut)
+        i1 = headers.index(fin)
+        groupes.append((i0 + 1, i1 + 1))
+    return groupes
+
+
+def _encadrer_groupe(ws, first_col, last_col, first_row, last_row):
+    """Bordure moyenne autour d'un bloc de colonnes (première ligne =
+    en-tête) - aide à repérer visuellement les groupes de colonnes
+    apparentées (classement/cote, matchs/victoires/%, indices...)."""
+    if last_row < first_row:
+        return
+    for row in range(first_row, last_row + 1):
+        for col in range(first_col, last_col + 1):
+            cell = ws.cell(row=row, column=col)
+            border = cell.border
+            cell.border = Border(
+                left=BORDURE_GROUPE if col == first_col else border.left,
+                right=BORDURE_GROUPE if col == last_col else border.right,
+                top=BORDURE_GROUPE if row == first_row else border.top,
+                bottom=BORDURE_GROUPE if row == last_row else border.bottom,
+            )
+
+
+def _ajouter_filtre(ws, nb_colonnes, last_row):
+    """Filtre Auto Excel (Data > Filter) sur l'en-tête, pour trier/filtrer
+    facilement sans dérouler un menu Excel à la main."""
+    if last_row < 1:
+        return
+    ws.auto_filter.ref = f"A1:{get_column_letter(nb_colonnes)}{last_row}"
+
+
 # ------------------------------------------------------- onglets par tableau
 
 def _fmt_meilleur_partenaire(mp):
@@ -147,12 +208,6 @@ def _fmt_meilleur_partenaire(mp):
         return [None, None, None, None, None, None]
     return [mp["nom"], mp["matchs_joues"], mp["victoires"], _pct(mp["pct_victoire"]),
             round(mp["indice_performance"], 2), mp.get("points_cote_total")]
-
-
-def _fmt_meilleur_partenaire_points(mp):
-    if not mp or mp.get("points_cote_total") is None:
-        return [None, None, None]
-    return [mp["nom"], mp["matchs_joues"], mp["points_cote_total"]]
 
 
 def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
@@ -164,6 +219,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     if inclure_sexe:
         headers += ["Sexe"]
     headers += ["Classement", "Cote", "Matchs joués", "Victoires", "% victoire"]
+    headers += ["Indice performance", "Indice niveau", "Indice global"]
     if has_partner:
         headers += [
             "Matchs avec partenaire club", "% avec partenaire club",
@@ -174,10 +230,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Meilleur partenaire au club (si différent)", "Matchs avec lui/elle (club)",
             "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
             "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
-            "Meilleur partenaire (points)", "Matchs avec lui/elle (points)",
-            "Points cote cumulés avec lui/elle",
         ]
-    headers += ["Indice performance", "Indice niveau", "Indice global"]
     ws.append(headers)
 
     rows = []
@@ -196,6 +249,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             row += [s["Sexe"]]
         row += [entry["classement"], entry["cote"], entry["matchs_joues"], entry["victoires"],
                 _pct(entry["pct_victoire"])]
+        row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]), _pct(entry["indice_global"])]
         if has_partner:
             p = entry["partenaire"]
             avec, sans = p["avec_partenaire_club"], p["sans_partenaire_club"]
@@ -206,27 +260,33 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             ]
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire"])
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire_club"])
-            row += _fmt_meilleur_partenaire_points(entry["meilleur_partenaire_points"])
-        row += [_pct(entry["indice_performance"]), entry["indice_niveau"], _pct(entry["indice_global"])]
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
+
+    groupes = [("Classement", "Cote"), ("Matchs joués", "% victoire"),
+               ("Indice performance", "Indice global")]
+    if has_partner:
+        groupes += [
+            ("Matchs avec partenaire club", "Delta % (avec - sans)"),
+            ("Meilleur partenaire", "Points cote marqués ensemble"),
+            ("Meilleur partenaire au club (si différent)", "Points cote marqués ensemble (club)"),
+        ]
+    for c0, c1 in _grouper(headers, *groupes):
+        _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
+    _ajouter_filtre(ws, len(headers), ws.max_row)
     return ws
 
 
 # ------------------------------------------------------------- Bilan joueur
 
-def _fmt_cotes(bloc):
-    return [bloc["septembre_rang"], bloc["septembre_points"], bloc["actuel_rang"], bloc["actuel_points"]]
+def _par_tableau(prog, cle):
+    return [prog[t][cle] for t in ("Simple", "Double", "Mixte")]
 
 
-def _fmt_diffs(bloc):
-    diff_points, diff_rel = bloc["diff_points"], bloc["diff_relatif"]
-    return [
-        bloc["gain_places"],
-        round(diff_points, 1) if diff_points is not None else None,
-        round(diff_rel * 100, 1) if diff_rel is not None else None,
-    ]
+def _par_tableau_arrondi(prog, cle, echelle=1):
+    return [round(prog[t][cle] * echelle, 1) if prog[t][cle] is not None else None
+            for t in ("Simple", "Double", "Mixte")]
 
 
 def _write_bilan_sheet(wb, all_stats):
@@ -237,27 +297,29 @@ def _write_bilan_sheet(wb, all_stats):
         "Matchs D", "Victoires D", "% D",
         "Matchs M", "Victoires M", "% M",
         "Matchs total", "Victoires total", "% total",
+        # rappel des indices par tableau (pas seulement le global agrégé,
+        # pour qu'on sache de quel tableau ils parlent), puis le global
+        "Indice performance S", "Indice niveau S", "Indice global S",
+        "Indice performance D", "Indice niveau D", "Indice global D",
+        "Indice performance M", "Indice niveau M", "Indice global M",
+        "Indice performance (global)", "Indice niveau (global)", "Indice global (global)",
         "Matchs avec partenaire club (D+M)", "% avec partenaire club",
         "Matchs sans partenaire club (D+M)", "% sans partenaire club",
         "Delta % partenaire (avec - sans)",
+        # un seul meilleur partenaire (D+M), pas de distinction club/overall ici
         "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
         "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
-        "Meilleur partenaire au club (D+M, si différent)", "Matchs avec lui/elle (club)",
-        "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
-        "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
-        "Meilleur partenaire (D+M, points)", "Matchs avec lui/elle (points)",
-        "Points cote cumulés avec lui/elle",
         "Nb tournois individuels", "Nb interclubs (par jour)",
-        # regroupé par type de métrique (classements, puis cotes/places, puis diffs) plutôt que par tableau
+        # regroupé par type de métrique (classements, puis places, puis
+        # cotes, puis diffs) plutôt que par tableau
         "Classement sept. S", "Classement sept. D", "Classement sept. M",
-        "Place sept. S", "Cote sept. S", "Place actuelle S", "Cote actuelle S",
-        "Place sept. D", "Cote sept. D", "Place actuelle D", "Cote actuelle D",
-        "Place sept. M", "Cote sept. M", "Place actuelle M", "Cote actuelle M",
-        "Gain places S", "Diff cote S", "Diff relative S (%)",
-        "Gain places D", "Diff cote D", "Diff relative D (%)",
-        "Gain places M", "Diff cote M", "Diff relative M (%)",
-        "Diff cote cumulée", "Diff relative cumulée (%)",
-        "Indice performance", "Indice niveau", "Indice global",
+        "Place sept. S", "Place sept. D", "Place sept. M",
+        "Cote sept. S", "Cote sept. D", "Cote sept. M",
+        "Place actuelle S", "Place actuelle D", "Place actuelle M",
+        "Cote actuelle S", "Cote actuelle D", "Cote actuelle M",
+        "Gain places S", "Gain places D", "Gain places M",
+        "Diff cote S", "Diff cote D", "Diff cote M", "Diff cote cumulée",
+        "Diff relative S (%)", "Diff relative D (%)", "Diff relative M (%)", "Diff relative cumulée (%)",
     ]
     ws.append(headers)
 
@@ -275,31 +337,45 @@ def _write_bilan_sheet(wb, all_stats):
             double["matchs_joues"], double["victoires"], _pct(double["pct_victoire"]),
             mixte["matchs_joues"], mixte["victoires"], _pct(mixte["pct_victoire"]),
             g["matchs_joues"], g["victoires"], _pct(g["pct_victoire"]),
+        ]
+        for entry in (simple, double, mixte, g):
+            row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]), _pct(entry["indice_global"])]
+        row += [
             avec["matchs_joues"], _pct(avec["pct_victoire"]),
             sans["matchs_joues"], _pct(sans["pct_victoire"]),
             _pct(p["delta_pct"]),
         ]
         row += _fmt_meilleur_partenaire(s["meilleur_partenaire_double_mixte"])
-        row += _fmt_meilleur_partenaire(s["meilleur_partenaire_double_mixte_club"])
-        row += _fmt_meilleur_partenaire_points(s["meilleur_partenaire_double_mixte_points"])
         row += [t["nb_tournois"], t["nb_interclubs"]]
 
-        row += [prog["Simple"]["septembre_classement"], prog["Double"]["septembre_classement"],
-                prog["Mixte"]["septembre_classement"]]
-        row += _fmt_cotes(prog["Simple"])
-        row += _fmt_cotes(prog["Double"])
-        row += _fmt_cotes(prog["Mixte"])
-        row += _fmt_diffs(prog["Simple"])
-        row += _fmt_diffs(prog["Double"])
-        row += _fmt_diffs(prog["Mixte"])
-        row += [
-            round(cum["diff_points"], 1) if cum["diff_points"] is not None else None,
-            round(cum["diff_relatif"] * 100, 1) if cum["diff_relatif"] is not None else None,
-        ]
-        row += [_pct(g["indice_performance"]), g["indice_niveau"], _pct(g["indice_global"])]
+        row += _par_tableau(prog, "septembre_classement")
+        row += _par_tableau(prog, "septembre_rang")
+        row += _par_tableau(prog, "septembre_points")
+        row += _par_tableau(prog, "actuel_rang")
+        row += _par_tableau(prog, "actuel_points")
+        row += _par_tableau(prog, "gain_places")
+        row += _par_tableau_arrondi(prog, "diff_points")
+        row += [round(cum["diff_points"], 1) if cum["diff_points"] is not None else None]
+        row += _par_tableau_arrondi(prog, "diff_relatif", echelle=100)
+        row += [round(cum["diff_relatif"] * 100, 1) if cum["diff_relatif"] is not None else None]
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
+
+    groupes = _grouper(
+        headers,
+        ("Matchs S", "% total"),
+        ("Indice performance S", "Indice global (global)"),
+        ("Matchs avec partenaire club (D+M)", "Delta % partenaire (avec - sans)"),
+        ("Meilleur partenaire (D+M)", "Points cote marqués ensemble"),
+        ("Nb tournois individuels", "Nb interclubs (par jour)"),
+        ("Classement sept. S", "Classement sept. M"),
+        ("Place sept. S", "Cote actuelle M"),
+        ("Gain places S", "Diff relative cumulée (%)"),
+    )
+    for c0, c1 in groupes:
+        _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
+    _ajouter_filtre(ws, len(headers), ws.max_row)
     return ws
 
 
@@ -354,6 +430,7 @@ def _write_tournois_sheet(wb, all_stats):
     for row in rows:
         ws.append(row)
     _appliquer_mise_en_forme(ws, header, 2, 1 + len(rows))
+    _ajouter_filtre(ws, len(header), 1 + len(rows))
 
     # --- tableau + graphique club par mois ---
     ws.append([])
@@ -459,6 +536,7 @@ def _write_club_sheet(wb, all_stats):
     first_row = 2
     last_row = ws.max_row
     _appliquer_mise_en_forme(ws, header, first_row, last_row)
+    _ajouter_filtre(ws, len(header), last_row)
 
     if last_row >= first_row:
         bar = BarChart()
@@ -487,7 +565,7 @@ def _write_club_sheet(wb, all_stats):
         line.set_categories(categories)
 
         bar += line
-        ws.add_chart(bar, f"AF{header_row}")
+        ws.add_chart(bar, f"B{last_row + 3}")
 
     return ws
 

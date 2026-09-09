@@ -221,43 +221,56 @@ def _current_season_start_year(today=None):
     return today.year if today.month >= 9 else today.year - 1
 
 
-def _parse_results_with_retry(driver, mon_nom=None, tentatives=4, pause=0.8):
-    """results.parse_results, avec un filet de sécurité : si la section est
-    encore vide (0 événement - le rendu n'a peut-être pas fini de monter),
-    ou si des événements sont trouvés mais aucun match dedans (le détail
-    n'a peut-être pas fini de charger), on retente avant de conclure
-    "vraiment aucune donnée". Coûte quelques dixièmes de seconde de plus
-    pour un tableau réellement vide (ex: joueur qui n'a jamais joué de
-    Mixte), mais évite de perdre silencieusement des joueurs entiers -
-    constaté : jusqu'à 16 joueurs sur 73 revenaient vides dans Bilan
-    joueur avec l'ancienne version qui ne retentait pas sur "0 événement".
+def _stabilise(lire, taille, tentatives=6, pause=0.5):
+    """Interroge `lire()` (une capture de l'état actuel du DOM) plusieurs
+    fois de suite jusqu'à ce que deux lectures consécutives donnent la même
+    `taille(valeur)`, ou jusqu'à `tentatives` lectures - le rendu React a
+    fini d'ajouter des lignes.
+
+    Se contenter du premier résultat "non vide" ne suffit pas : le tableau
+    peut apparaître avec quelques lignes puis continuer à se remplir en
+    plusieurs vagues, pas juste "vide" puis "tout d'un coup". C'est ce qui
+    causait des résultats partiels (pas seulement des joueurs entièrement
+    vides, déjà corrigé séparément) pour pas mal de joueurs."""
+    valeur = None
+    precedente = -1
+    for i in range(tentatives):
+        valeur = lire()
+        actuelle = taille(valeur)
+        if actuelle == precedente:
+            return valeur
+        precedente = actuelle
+        if i < tentatives - 1:
+            time.sleep(pause)
+    return valeur
+
+
+def _parse_results_with_retry(driver, mon_nom=None, tentatives=6, pause=0.5):
+    """results.parse_results, en attendant que le nombre de matchs se
+    stabilise (voir _stabilise) plutôt que de s'arrêter au premier essai
+    non vide - constaté : jusqu'à 16 joueurs sur 73 revenaient entièrement
+    vides dans Bilan joueur avec l'ancienne version qui ne retentait même
+    pas sur "0 événement" ; et au-delà de ça, des joueurs actifs revenaient
+    avec des résultats incomplets parce qu'un premier essai non vide n'est
+    pas toujours un essai COMPLET.
 
     `mon_nom` (player["Nom"]) est transmis à parse_results pour identifier
     "moi" de façon fiable dans chaque match (voir results.parse_match_row)
     plutôt que par la seule absence de lien, qui peut se tromper si un
     adversaire/partenaire hors-club n'a pas non plus de profil "linkable"."""
-    events = []
-    for tentative in range(tentatives):
-        events = results.parse_results(_soup(driver), mon_nom)
-        nb_matchs = sum(len(e["matchs"]) for e in events)
-        if events and nb_matchs > 0:
-            return events
-        if tentative < tentatives - 1:
-            time.sleep(pause)
-    return events
+    return _stabilise(
+        lambda: results.parse_results(_soup(driver), mon_nom),
+        lambda events: sum(len(e["matchs"]) for e in events),
+        tentatives, pause)
 
 
-def _parse_evolution_with_retry(driver, tentatives=4, pause=0.8):
-    """Même filet de sécurité que _parse_results_with_retry, pour le panel
-    Évolution classement (aucune protection avant ce correctif)."""
-    evolution = []
-    for tentative in range(tentatives):
-        evolution = results.parse_classement_evolution(_soup(driver))
-        if evolution:
-            return evolution
-        if tentative < tentatives - 1:
-            time.sleep(pause)
-    return evolution
+def _parse_evolution_with_retry(driver, tentatives=6, pause=0.5):
+    """Même principe que _parse_results_with_retry, pour le panel Évolution
+    classement."""
+    return _stabilise(
+        lambda: results.parse_classement_evolution(_soup(driver)),
+        len,
+        tentatives, pause)
 
 
 def scrape_player(driver, player):
@@ -298,6 +311,24 @@ def scrape_player(driver, player):
     expand_section_by_text(driver, "Évolution classement")
     evolution = _parse_evolution_with_retry(driver)
     player["Classement 1er septembre"] = results.find_september_1(evolution, _current_season_start_year())
+
+    # la cote "les tops" (roster, page publique) peut manquer un tableau où
+    # le joueur a pourtant joué - filtre non documenté de cette page
+    # publique (voir roster.fetch_club_roster), constaté sur un joueur N3 en
+    # Simple qui ressortait avec une cote à 0. La ligne la plus récente de
+    # l'historique de classement (sa propre page, authentifiée) est plus
+    # fiable et couvre toujours les 3 tableaux : on l'utilise pour corriger
+    # la cote, et on récupère au passage la PLACE NATIONALE actuelle - à ne
+    # pas confondre avec player["Rang Actuel"] (roster), qui est la position
+    # du joueur DANS LE CLUB pour ce tableau, pas son rang national (utilisé
+    # tel quel ailleurs pour pointsIC.py, où c'est le bon niveau de détail).
+    actuel = evolution[0] if evolution else None
+    player["Rang National Actuel"] = {}
+    for tableau in ("Simple", "Double", "Mixte"):
+        bloc = (actuel or {}).get(tableau) or {}
+        player["Rang National Actuel"][tableau] = bloc.get("rang")
+        if bloc.get("points") is not None:
+            player["Points Actuel"][tableau] = bloc["points"]
 
     return events
 

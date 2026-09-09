@@ -100,43 +100,40 @@ def _partenaires_stats(matchs):
             "victoires": agg["victoires"],
             "pct_victoire": agg["pct_victoire"],
             "indice_performance": indice_performance(agg),
+            # informatif (points de cote gagnés/perdus avec ce partenaire),
+            # pas utilisé pour choisir le meilleur partenaire.
             "points_cote_total": sum(points) if points else None,
         }
     return resultat
 
 
-def _meilleur_partenaire_parmi(matchs, cle="indice", club_uniquement=False):
-    """Le partenaire qui ressort en tête selon `cle` :
-    - "indice" (par défaut) : victoires x taux de victoire, même formule
-      que indice_performance - pas de seuil arbitraire, un partenaire joué
-      1 fois et gagné donne 1, un partenaire joué et gagné 5 fois donne 5,
-      le volume l'emporte naturellement sur un coup de chance isolé.
-    - "points_cote" : la somme des points de cote gagnés/perdus avec ce
-      partenaire (un autre angle pour se recouper avec le premier).
+def _meilleur_partenaire_parmi(matchs, club_uniquement=False):
+    """Le partenaire qui ressort en tête selon l'indice de performance
+    (victoires x taux de victoire, même formule que indice_performance) -
+    pas de seuil arbitraire, un partenaire joué 1 fois et gagné donne 1, un
+    partenaire joué et gagné 5 fois donne 5, le volume l'emporte
+    naturellement sur un coup de chance isolé.
     club_uniquement=True restreint aux partenaires du club (GAB38) - pour
     distinguer "meilleur partenaire au club" de "meilleur partenaire, club
-    ou pas". None si `matchs` est vide ou si personne n'a de valeur
-    exploitable pour `cle`."""
+    ou pas". None si `matchs` est vide."""
     if club_uniquement:
         matchs = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     partenaires = _partenaires_stats(matchs)
-    champ = "indice_performance" if cle == "indice" else "points_cote_total"
-    candidats = [v for v in partenaires.values() if v[champ] is not None]
-    if not candidats:
+    if not partenaires:
         return None
-    return max(candidats, key=lambda v: v[champ])
+    return max(partenaires.values(), key=lambda v: v["indice_performance"])
 
 
-def meilleur_partenaire(events, cle="indice", club_uniquement=False):
+def meilleur_partenaire(events, club_uniquement=False):
     """Double ou Mixte uniquement (un seul tableau)."""
-    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]], cle, club_uniquement)
+    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]], club_uniquement)
 
 
-def meilleur_partenaire_combine(events_double, events_mixte, cle="indice", club_uniquement=False):
+def meilleur_partenaire_combine(events_double, events_mixte, club_uniquement=False):
     """Double + Mixte fusionnés (le partenaire est un partenaire, peu
     importe le tableau)."""
     matchs = [m for events in (events_double, events_mixte) for e in events for m in e["matchs"]]
-    return _meilleur_partenaire_parmi(matchs, cle, club_uniquement)
+    return _meilleur_partenaire_parmi(matchs, club_uniquement)
 
 
 def meilleur_partenaire_club_si_different(overall, club):
@@ -166,7 +163,13 @@ def diff_classement(player):
     septembre"], rempli par statsJoueurs.scrape_player via
     results.parse_classement_evolution + find_september_1 : {"Simple":
     {"rang","classement","points"}, "Double": {...}, "Mixte": {...}}) et
-    l'actuel (roster), par tableau + cumulé sur les 3.
+    l'actuel (player["Rang National Actuel"], même source - la ligne la plus
+    récente de l'historique de classement), par tableau + cumulé sur les 3.
+
+    Le rang utilisé ici est le rang NATIONAL (même échelle que le rang de
+    septembre) - pas player["Rang Actuel"] (roster), qui est la position du
+    joueur DANS LE CLUB pour ce tableau et n'a donc rien de comparable avec
+    un rang de septembre à plusieurs centaines/milliers.
 
     - diff_points = cote actuelle - cote de septembre, diff_relatif = ce
       diff / cote de septembre (progression relative depuis le début de
@@ -174,7 +177,7 @@ def diff_classement(player):
     - gain_places = rang de septembre - rang actuel : positif = a gagné des
       places (un rang plus PETIT est meilleur, donc rang qui baisse)."""
     sept = player.get("Classement 1er septembre") or {}
-    rang_actuel = player.get("Rang Actuel") or {}
+    rang_actuel = player.get("Rang National Actuel") or {}
 
     resultat = {}
     total_diff_points = total_sept_points = 0.0
@@ -222,11 +225,19 @@ def indice_performance(stats):
     return stats["victoires"] * (stats["victoires"] / stats["matchs_joues"])
 
 
-def indice_global(indice_perf, indice_niv):
-    """Un joueur qui gagne beaucoup ET à un niveau élevé doit ressortir en
-    tête sur les deux facteurs à la fois (valeur brute, normalisée après
-    coup en % du max du club)."""
-    return indice_perf * indice_niv
+def indice_global(indice_perf_normalise, indice_niveau_normalise):
+    """Moyenne de indice_performance et indice_niveau, une fois tous les
+    deux normalisés (0-100, % du max club - voir normaliser_club) : un
+    joueur à 100 est le meilleur du club à la fois en performance ET en
+    niveau, 50 = dans la moyenne sur les deux.
+
+    Une moyenne de valeurs déjà normalisées plutôt qu'un produit de valeurs
+    brutes (l'ancienne approche) : performance brute (victoires x taux,
+    quelques unités) et niveau brut (barème Valeur IC, 1 à 93) n'ont ni la
+    même échelle ni la même distribution - les multiplier directement
+    faisait dominer presque entièrement le niveau, la performance pesant à
+    peine dans le résultat final."""
+    return (indice_perf_normalise + indice_niveau_normalise) / 2
 
 
 def normaliser(items, cle_brute, cle_normalisee, echelle=100):
@@ -289,19 +300,16 @@ def build_player_stats(player, events_par_tableau):
         points[tableau] = player["Points Actuel"][tableau]
         niveau = roster.valeur_ic(classement, player["Sexe"],
                                    points["Simple"], points["Double"], points["Mixte"])
-        perf = indice_performance(stats)
         entry = {
             **stats,
             "classement": classement,
             "cote": player["Points Actuel"][tableau],
-            "indice_niveau": niveau,
-            "indice_performance_brut": perf,
-            "indice_global_brut": indice_global(perf, niveau),
+            "indice_niveau_brut": niveau,
+            "indice_performance_brut": indice_performance(stats),
         }
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)
             entry["meilleur_partenaire"] = meilleur_partenaire(events)
-            entry["meilleur_partenaire_points"] = meilleur_partenaire(events, cle="points_cote")
             entry["meilleur_partenaire_club"] = meilleur_partenaire_club_si_different(
                 entry["meilleur_partenaire"], meilleur_partenaire(events, club_uniquement=True))
         par_tableau[tableau] = entry
@@ -310,8 +318,6 @@ def build_player_stats(player, events_par_tableau):
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
     meilleur_partenaire_dm = meilleur_partenaire_combine(
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
-    meilleur_partenaire_dm_points = meilleur_partenaire_combine(
-        events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []), cle="points_cote")
     meilleur_partenaire_dm_club = meilleur_partenaire_club_si_different(
         meilleur_partenaire_dm,
         meilleur_partenaire_combine(events_par_tableau.get("Double", []),
@@ -341,7 +347,6 @@ def build_player_stats(player, events_par_tableau):
         "par_tableau": par_tableau,
         "partenaire_double_mixte": partenaire_double_mixte,
         "meilleur_partenaire_double_mixte": meilleur_partenaire_dm,
-        "meilleur_partenaire_double_mixte_points": meilleur_partenaire_dm_points,
         "meilleur_partenaire_double_mixte_club": meilleur_partenaire_dm_club,
         "ordre_disciplines": ordre_disciplines(par_tableau),
         "progression": diff_classement(player),
@@ -350,9 +355,8 @@ def build_player_stats(player, events_par_tableau):
             "meilleur_tableau": player["Meilleur tableau"],
             "rang_meilleur_tableau": player.get("Rang meilleur tableau"),
             "points_meilleur_tableau": player["Points meilleur tableau"],
-            "indice_niveau": niveau_global,
+            "indice_niveau_brut": niveau_global,
             "indice_performance_brut": perf_globale,
-            "indice_global_brut": indice_global(perf_globale, niveau_global),
         },
         "tournois": tournois,
         "match_log": match_log,
@@ -360,17 +364,23 @@ def build_player_stats(player, events_par_tableau):
 
 
 def normaliser_club(all_stats):
-    """Normalise les indices bruts en % du max observé dans le club (une
-    fois tous les joueurs traités), par tableau et au global. Modifie
-    all_stats en place (ajoute indice_performance/indice_global à côté des
-    valeurs _brut) et renvoie les maxima bruts observés."""
+    """Normalise indice_performance et indice_niveau en % du max observé
+    dans le club (une fois tous les joueurs traités), par tableau et au
+    global, PUIS calcule indice_global à partir des deux valeurs déjà
+    normalisées (voir indice_global - une moyenne n'a de sens que si les
+    deux côtés sont sur la même échelle). Modifie all_stats en place et
+    renvoie les maxima bruts observés."""
     maxima = {}
     for tableau in ("Simple", "Double", "Mixte"):
         entries = [s["par_tableau"][tableau] for s in all_stats]
         maxima[f"{tableau} - performance"] = normaliser(entries, "indice_performance_brut", "indice_performance")
-        maxima[f"{tableau} - global"] = normaliser(entries, "indice_global_brut", "indice_global")
+        maxima[f"{tableau} - niveau"] = normaliser(entries, "indice_niveau_brut", "indice_niveau")
+        for entry in entries:
+            entry["indice_global"] = indice_global(entry["indice_performance"], entry["indice_niveau"])
 
     globaux = [s["global"] for s in all_stats]
     maxima["Global - performance"] = normaliser(globaux, "indice_performance_brut", "indice_performance")
-    maxima["Global - global"] = normaliser(globaux, "indice_global_brut", "indice_global")
+    maxima["Global - niveau"] = normaliser(globaux, "indice_niveau_brut", "indice_niveau")
+    for g in globaux:
+        g["indice_global"] = indice_global(g["indice_performance"], g["indice_niveau"])
     return maxima
