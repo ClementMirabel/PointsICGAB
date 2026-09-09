@@ -9,7 +9,11 @@ on:
     branches: [ main ]
     paths:
       - "pointsIC.py"
+      - "statsJoueurs.py"
       - "roster.py"
+      - "results.py"
+      - "stats.py"
+      - "export_excel.py"
       - "requirements.txt"
       - ".github/workflows/weekly-export.yml"
   workflow_dispatch:
@@ -18,7 +22,7 @@ permissions:
   contents: write
 
 jobs:
-  export:
+  export-points:
     runs-on: ubuntu-latest
 
     steps:
@@ -34,16 +38,58 @@ jobs:
       - name: Run pointsIC.py
         run: python pointsIC.py
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pointsIC-xlsx
+          path: pointsIC.xlsx
+
+  export-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run statsJoueurs.py
+        env:
+          MYFFBAD_LICENCE: ${{ secrets.MYFFBAD_LICENCE }}
+          MYFFBAD_PASSWORD: ${{ secrets.MYFFBAD_PASSWORD }}
+        run: python statsJoueurs.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: statsJoueurs-xlsx
+          path: statsJoueurs.xlsx
+
+  release:
+    needs: [export-points, export-stats]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
       - name: Delete previous export
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release delete weekly-data --yes --cleanup-tag --repo "$GITHUB_REPOSITORY"
         continue-on-error: true
 
-      - name: Publish the Excel file
+      - name: Publish the Excel files
         uses: softprops/action-gh-release@v2
         with:
           tag_name: weekly-data
           name: "Export hebdomadaire"
-          body: Généré automatiquement tous les jeudis à partir des classements myffbad.fr.
-          files: pointsIC.xlsx
+          body: Généré automatiquement tous les jeudis à partir des données myffbad.fr.
+          files: artifacts/**/*.xlsx
