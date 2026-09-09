@@ -100,20 +100,32 @@ def expand_all_sections(driver):
 def click_buttons_by_text(driver, text):
     """Clique tous les boutons portant ce texte (plusieurs groupes Simple/Double/
     Mixte coexistent sur la page : Résultats, Nombre de points/Classement,
-    Progression). Renvoie le nombre de boutons cliqués."""
+    Progression). Renvoie le nombre de boutons cliqués.
+
+    Recherche les boutons un par un, juste avant chaque clic : cliquer sur
+    l'un d'eux provoque un re-rendu React qui invalide (stale) les
+    références des autres boutons déjà récupérés dans une même liste.
+    """
     n = 0
-    for btn in driver.find_elements(By.CSS_SELECTOR, "button[data-testid='button']"):
-        # .text ne lit que le texte visible à l'écran (souvent vide pour un
-        # bouton hors viewport en headless) ; textContent lit le DOM, fiable
-        # peu importe le scroll.
-        label = (btn.get_attribute("textContent") or "").strip()
-        if label == text:
-            try:
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
-                click(driver, btn)
-                n += 1
-            except Exception as e:
-                print(f"  clic bouton '{text}' : {e}")
+    for _ in range(10):  # garde-fou : jamais plus de 10 groupes sur la page
+        target = None
+        for btn in driver.find_elements(By.CSS_SELECTOR, "button[data-testid='button']"):
+            # .text ne lit que le texte visible à l'écran (souvent vide pour
+            # un bouton hors viewport en headless) ; textContent lit le DOM,
+            # fiable peu importe le scroll.
+            label = (btn.get_attribute("textContent") or "").strip()
+            if label == text and btn.get_attribute("data-variant") != "primary":
+                target = btn
+                break
+        if target is None:
+            break  # plus aucun bouton "text" non encore actif
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target)
+            click(driver, target)
+            n += 1
+        except Exception as e:
+            print(f"  clic bouton '{text}' : {e}")
+            break
     return n
 
 
