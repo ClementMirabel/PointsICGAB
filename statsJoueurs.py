@@ -235,6 +235,16 @@ def main_debug(licence_ids):
         driver.quit()
 
 
+# seuil minimum (meilleur tableau, tous discipline confondues) pour être
+# scrapé : chaque joueur nécessite une page authentifiée à plusieurs clics,
+# tout le club prendrait beaucoup trop de temps.
+SEUIL_TABLEAU_MIN = "R6"
+
+
+def joueur_est_eligible(player):
+    return roster.TABLEAUX.index(player["Meilleur tableau"]) <= roster.TABLEAUX.index(SEUIL_TABLEAU_MIN)
+
+
 def main(licence_filter):
     print("Récupération du roster du club...")
     with roster.new_session() as session:
@@ -246,7 +256,10 @@ def main(licence_filter):
         players = [p for p in players if p["Licence"] in licence_filter]
         print(f"{len(players)} joueur(s) sélectionné(s) (test).")
     else:
-        print(f"{len(players)} joueurs dans le roster.")
+        total = len(players)
+        players = [p for p in players if joueur_est_eligible(p)]
+        print(f"{len(players)} joueurs avec au moins un classement {SEUIL_TABLEAU_MIN} ou mieux "
+              f"(sur {total} au total).")
 
     my_licence, my_password = get_credentials()
     driver = new_driver()
