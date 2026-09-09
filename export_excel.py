@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 
 import openpyxl
 from openpyxl.chart import BarChart, LineChart, Reference
-from openpyxl.formatting.rule import ColorScaleRule, FormulaRule
+from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -21,20 +21,37 @@ DISCIPLINE_SHEETS = [
 
 # ---------------------------------------------------------------- couleurs
 
-FILL_N = PatternFill("solid", fgColor="FFE74C3C")  # rouge
-FILL_R = PatternFill("solid", fgColor="FF3498DB")  # bleu
-FILL_D = PatternFill("solid", fgColor="FF27AE60")  # vert
+
+def _uni(color):
+    """PatternFill "solid" utilisable en mise en forme conditionnelle :
+    Excel affiche bgColor (pas fgColor) pour un remplissage solid dans un
+    dxf de mise en forme conditionnelle - contrairement à un remplissage de
+    cellule classique. On met les deux pour être sûr que ça s'affiche."""
+    return PatternFill(fill_type="solid", start_color=color, end_color=color)
+
+
+FILL_N = _uni("FFE74C3C")  # rouge
+FILL_R = _uni("FF3498DB")  # bleu
+FILL_D = _uni("FF27AE60")  # vert
 FONT_BLANC = Font(color="FFFFFFFF")
 
-FILL_SIMPLE = PatternFill("solid", fgColor="FFD5E8D4")
-FILL_DOUBLE = PatternFill("solid", fgColor="FFDAE8FC")
-FILL_MIXTE = PatternFill("solid", fgColor="FFFFE6CC")
+FILL_SIMPLE = _uni("FFD5E8D4")
+FILL_DOUBLE = _uni("FFDAE8FC")
+FILL_MIXTE = _uni("FFFFE6CC")
 
 # colonnes texte qu'on ne colore pas en dégradé (déjà colorées autrement,
 # ou pas un indicateur de performance)
 CLASSEMENT_HEADERS = {"Classement", "Classement sept. S", "Classement sept. D", "Classement sept. M"}
 TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
+                "Meilleur partenaire (points)", "Meilleur partenaire (D+M, points)",
                 "Ordre tableau"} | CLASSEMENT_HEADERS
+
+
+def _est_colonne_diff(header):
+    """Colonnes pouvant être négatives (delta/diff/gain de places) : dégradé
+    divergent rouge-blanc-vert centré sur 0, plutôt que le dégradé blanc->vert
+    habituel (qui n'aurait pas de sens sur une échelle qui traverse 0)."""
+    return "Delta" in header or "Diff" in header or "Gain places" in header
 
 
 def _pct(value):
@@ -66,38 +83,86 @@ def _colorer_ordre_tableau(ws, col_idx, first_row, last_row):
 
 
 def _degrade(ws, col_idx, first_row, last_row):
-    """Dégradé rouge (bas) -> jaune -> vert (haut) sur la colonne."""
+    """Dégradé blanc (bas) -> vert (haut) sur la colonne."""
     if last_row < first_row:
         return
     col = get_column_letter(col_idx)
     plage = f"{col}{first_row}:{col}{last_row}"
     rule = ColorScaleRule(
-        start_type="min", start_color="FFF8696B",
-        mid_type="percentile", mid_value=50, mid_color="FFFFEB84",
+        start_type="min", start_color="FFFFFFFF",
         end_type="max", end_color="FF63BE7B",
     )
     ws.conditional_formatting.add(plage, rule)
 
 
+def _degrade_diverge(ws, col_idx, first_row, last_row):
+    """Rouge (négatif) -> blanc (zéro) -> vert (positif), avec des barres de
+    données par-dessus - pour les colonnes delta/diff qui peuvent être
+    négatives (un dégradé blanc->vert n'aurait pas de sens ici : le "bas"
+    de l'échelle doit se voir comme mauvais, pas juste "moins vert")."""
+    if last_row < first_row:
+        return
+    col = get_column_letter(col_idx)
+    plage = f"{col}{first_row}:{col}{last_row}"
+    couleurs = ColorScaleRule(
+        start_type="min", start_color="FFE74C3C",
+        mid_type="num", mid_value=0, mid_color="FFFFFFFF",
+        end_type="max", end_color="FF63BE7B",
+    )
+    ws.conditional_formatting.add(plage, couleurs)
+    barres = DataBarRule(start_type="min", end_type="max", color="638EC6", showValue=True)
+    ws.conditional_formatting.add(plage, barres)
+
+
 def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
     """Classements colorés par tableau, dégradé de performance sur les
-    autres colonnes numériques, une seule fois toutes les lignes écrites."""
+    autres colonnes numériques (divergent pour les deltas), % affiché avec
+    un signe pourcentage - une seule fois toutes les lignes écrites."""
     for idx, header in enumerate(headers, start=1):
         if header in CLASSEMENT_HEADERS:
             _colorer_classement(ws, idx, first_row, last_row)
         elif header == "Ordre tableau":
             _colorer_ordre_tableau(ws, idx, first_row, last_row)
-        elif header not in TEXT_HEADERS:
+        elif header in TEXT_HEADERS:
+            pass
+        elif _est_colonne_diff(header):
+            _degrade_diverge(ws, idx, first_row, last_row)
+        else:
             _degrade(ws, idx, first_row, last_row)
+
+        if "%" in header and last_row >= first_row:
+            # les valeurs sont déjà sur une échelle 0-100 (pas 0-1), donc un
+            # format pourcent standard afficherait x100 en trop - on ajoute
+            # juste le signe "%" à l'affichage sans re-multiplier.
+            col = get_column_letter(idx)
+            for row in range(first_row, last_row + 1):
+                ws[f"{col}{row}"].number_format = '0.0"%"'
 
 
 # ------------------------------------------------------- onglets par tableau
 
+def _fmt_meilleur_partenaire(mp):
+    if not mp:
+        return [None, None, None, None, None]
+    return [mp["nom"], mp["matchs_joues"], mp["victoires"], _pct(mp["pct_victoire"]),
+            round(mp["indice_performance"], 2)]
+
+
+def _fmt_meilleur_partenaire_points(mp):
+    if not mp or mp.get("points_cote_total") is None:
+        return [None, None, None]
+    return [mp["nom"], mp["matchs_joues"], mp["points_cote_total"]]
+
+
 def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     ws = wb.create_sheet(title)
     has_partner = tableau in ("Double", "Mixte")
+    inclure_sexe = tableau == "Mixte"  # seul tableau qui mélange les deux genres
 
-    headers = ["Nom", "Classement", "Cote", "Matchs joués", "Victoires", "% victoire"]
+    headers = ["Nom"]
+    if inclure_sexe:
+        headers += ["Sexe"]
+    headers += ["Classement", "Cote", "Matchs joués", "Victoires", "% victoire"]
     if has_partner:
         headers += [
             "Matchs avec partenaire club", "% avec partenaire club",
@@ -105,6 +170,8 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Delta % (avec - sans)",
             "Meilleur partenaire", "Matchs avec lui/elle", "Victoires avec lui/elle",
             "% victoire avec lui/elle", "Indice perf. avec lui/elle",
+            "Meilleur partenaire (points)", "Matchs avec lui/elle (points)",
+            "Points cote cumulés avec lui/elle",
         ]
     headers += ["Indice performance", "Indice niveau", "Indice global"]
     ws.append(headers)
@@ -116,12 +183,15 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         entry = s["par_tableau"][tableau]
         if entry["matchs_joues"] == 0:
             continue
-        rows.append((s["Nom"], entry))
+        rows.append((s, entry))
     rows.sort(key=lambda r: -r[1]["indice_global"])
 
-    for nom, entry in rows:
-        row = [nom, entry["classement"], entry["cote"], entry["matchs_joues"], entry["victoires"],
-               _pct(entry["pct_victoire"])]
+    for s, entry in rows:
+        row = [s["Nom"]]
+        if inclure_sexe:
+            row += [s["Sexe"]]
+        row += [entry["classement"], entry["cote"], entry["matchs_joues"], entry["victoires"],
+                _pct(entry["pct_victoire"])]
         if has_partner:
             p = entry["partenaire"]
             avec, sans = p["avec_partenaire_club"], p["sans_partenaire_club"]
@@ -130,12 +200,8 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
                 sans["matchs_joues"], _pct(sans["pct_victoire"]),
                 _pct(p["delta_pct"]),
             ]
-            mp = entry["meilleur_partenaire"]
-            if mp:
-                row += [mp["nom"], mp["matchs_joues"], mp["victoires"],
-                        _pct(mp["pct_victoire"]), round(mp["indice_performance"], 2)]
-            else:
-                row += [None, None, None, None, None]
+            row += _fmt_meilleur_partenaire(entry["meilleur_partenaire"])
+            row += _fmt_meilleur_partenaire_points(entry["meilleur_partenaire_points"])
         row += [_pct(entry["indice_performance"]), entry["indice_niveau"], _pct(entry["indice_global"])]
         ws.append(row)
 
@@ -145,13 +211,13 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
 
 # ------------------------------------------------------------- Bilan joueur
 
-def _fmt_progression(bloc):
-    """classement/place/cote de septembre, place/cote actuelle, gain de
-    places, diff de cote et diff relative (%) pour un tableau."""
+def _fmt_cotes(bloc):
+    return [bloc["septembre_rang"], bloc["septembre_points"], bloc["actuel_rang"], bloc["actuel_points"]]
+
+
+def _fmt_diffs(bloc):
     diff_points, diff_rel = bloc["diff_points"], bloc["diff_relatif"]
     return [
-        bloc["septembre_classement"], bloc["septembre_rang"], bloc["septembre_points"],
-        bloc["actuel_rang"], bloc["actuel_points"],
         bloc["gain_places"],
         round(diff_points, 1) if diff_points is not None else None,
         round(diff_rel * 100, 1) if diff_rel is not None else None,
@@ -171,12 +237,16 @@ def _write_bilan_sheet(wb, all_stats):
         "Delta % partenaire (avec - sans)",
         "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
         "% victoire avec lui/elle", "Indice perf. avec lui/elle",
+        "Meilleur partenaire (D+M, points)", "Matchs avec lui/elle (points)",
+        "Points cote cumulés avec lui/elle",
         "Nb tournois individuels", "Nb interclubs (par jour)",
-        "Classement sept. S", "Place sept. S", "Cote sept. S", "Place actuelle S", "Cote actuelle S",
+        # regroupé par type de métrique (classements, puis cotes/places, puis diffs) plutôt que par tableau
+        "Classement sept. S", "Classement sept. D", "Classement sept. M",
+        "Place sept. S", "Cote sept. S", "Place actuelle S", "Cote actuelle S",
+        "Place sept. D", "Cote sept. D", "Place actuelle D", "Cote actuelle D",
+        "Place sept. M", "Cote sept. M", "Place actuelle M", "Cote actuelle M",
         "Gain places S", "Diff cote S", "Diff relative S (%)",
-        "Classement sept. D", "Place sept. D", "Cote sept. D", "Place actuelle D", "Cote actuelle D",
         "Gain places D", "Diff cote D", "Diff relative D (%)",
-        "Classement sept. M", "Place sept. M", "Cote sept. M", "Place actuelle M", "Cote actuelle M",
         "Gain places M", "Diff cote M", "Diff relative M (%)",
         "Diff cote cumulée", "Diff relative cumulée (%)",
         "Indice performance", "Indice niveau", "Indice global",
@@ -190,7 +260,6 @@ def _write_bilan_sheet(wb, all_stats):
         p = s["partenaire_double_mixte"]
         avec, sans = p["avec_partenaire_club"], p["sans_partenaire_club"]
         cum = prog["cumule"]
-        mp = s["meilleur_partenaire_double_mixte"]
 
         row = [
             s["Nom"], s["Sexe"], " > ".join(s["ordre_disciplines"]),
@@ -202,15 +271,18 @@ def _write_bilan_sheet(wb, all_stats):
             sans["matchs_joues"], _pct(sans["pct_victoire"]),
             _pct(p["delta_pct"]),
         ]
-        if mp:
-            row += [mp["nom"], mp["matchs_joues"], mp["victoires"],
-                    _pct(mp["pct_victoire"]), round(mp["indice_performance"], 2)]
-        else:
-            row += [None, None, None, None, None]
+        row += _fmt_meilleur_partenaire(s["meilleur_partenaire_double_mixte"])
+        row += _fmt_meilleur_partenaire_points(s["meilleur_partenaire_double_mixte_points"])
         row += [t["nb_tournois"], t["nb_interclubs"]]
-        row += _fmt_progression(prog["Simple"])
-        row += _fmt_progression(prog["Double"])
-        row += _fmt_progression(prog["Mixte"])
+
+        row += [prog["Simple"]["septembre_classement"], prog["Double"]["septembre_classement"],
+                prog["Mixte"]["septembre_classement"]]
+        row += _fmt_cotes(prog["Simple"])
+        row += _fmt_cotes(prog["Double"])
+        row += _fmt_cotes(prog["Mixte"])
+        row += _fmt_diffs(prog["Simple"])
+        row += _fmt_diffs(prog["Double"])
+        row += _fmt_diffs(prog["Mixte"])
         row += [
             round(cum["diff_points"], 1) if cum["diff_points"] is not None else None,
             round(cum["diff_relatif"] * 100, 1) if cum["diff_relatif"] is not None else None,

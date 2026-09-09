@@ -79,13 +79,10 @@ def discipline_stats_partenaire_combinee(events_double, events_mixte):
     return _split_partenaire(matchs)
 
 
-def _meilleur_partenaire_parmi(matchs):
-    """Le partenaire avec lequel le joueur a le meilleur indice de
-    performance (victoires x taux de victoire - même formule que
-    indice_performance, pas de seuil arbitraire : un partenaire joué 1 fois
-    et gagné donne un indice de 1, tandis qu'un partenaire joué 5 fois et
-    gagné 5 fois donne 5 - le volume l'emporte naturellement). Regroupe par
-    licence quand connue, par nom sinon. None si `matchs` est vide."""
+def _partenaires_stats(matchs):
+    """matchs -> dict clé_partenaire -> agrégat (nom, matchs/victoires/%,
+    indice de performance, total des points de cote gagnés/perdus avec ce
+    partenaire). Regroupe par licence quand connue, par nom sinon."""
     par_partenaire = defaultdict(list)
     for m in matchs:
         cle = m["partenaire_licence"] or m["partenaire_nom"]
@@ -93,33 +90,49 @@ def _meilleur_partenaire_parmi(matchs):
             continue
         par_partenaire[cle].append(m)
 
-    meilleur = None
-    meilleur_indice = -1
-    for ms in par_partenaire.values():
+    resultat = {}
+    for cle, ms in par_partenaire.items():
         agg = _agg_matchs(ms)
-        indice = indice_performance(agg)
-        if indice > meilleur_indice:
-            meilleur_indice = indice
-            meilleur = {
-                "nom": ms[0]["partenaire_nom"],
-                "matchs_joues": agg["matchs_joues"],
-                "victoires": agg["victoires"],
-                "pct_victoire": agg["pct_victoire"],
-                "indice_performance": indice,
-            }
-    return meilleur
+        points = [m["points_cote"] for m in ms if m["points_cote"] is not None]
+        resultat[cle] = {
+            "nom": ms[0]["partenaire_nom"],
+            "matchs_joues": agg["matchs_joues"],
+            "victoires": agg["victoires"],
+            "pct_victoire": agg["pct_victoire"],
+            "indice_performance": indice_performance(agg),
+            "points_cote_total": sum(points) if points else None,
+        }
+    return resultat
 
 
-def meilleur_partenaire(events):
+def _meilleur_partenaire_parmi(matchs, cle="indice"):
+    """Le partenaire qui ressort en tête selon `cle` :
+    - "indice" (par défaut) : victoires x taux de victoire, même formule
+      que indice_performance - pas de seuil arbitraire, un partenaire joué
+      1 fois et gagné donne 1, un partenaire joué et gagné 5 fois donne 5,
+      le volume l'emporte naturellement sur un coup de chance isolé.
+    - "points_cote" : la somme des points de cote gagnés/perdus avec ce
+      partenaire (un autre angle pour se recouper avec le premier).
+    None si `matchs` est vide ou si personne n'a de valeur exploitable
+    pour `cle`."""
+    partenaires = _partenaires_stats(matchs)
+    champ = "indice_performance" if cle == "indice" else "points_cote_total"
+    candidats = [v for v in partenaires.values() if v[champ] is not None]
+    if not candidats:
+        return None
+    return max(candidats, key=lambda v: v[champ])
+
+
+def meilleur_partenaire(events, cle="indice"):
     """Double ou Mixte uniquement (un seul tableau)."""
-    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]])
+    return _meilleur_partenaire_parmi([m for e in events for m in e["matchs"]], cle)
 
 
-def meilleur_partenaire_combine(events_double, events_mixte):
+def meilleur_partenaire_combine(events_double, events_mixte, cle="indice"):
     """Double + Mixte fusionnés (le partenaire est un partenaire, peu
     importe le tableau)."""
     matchs = [m for events in (events_double, events_mixte) for e in events for m in e["matchs"]]
-    return _meilleur_partenaire_parmi(matchs)
+    return _meilleur_partenaire_parmi(matchs, cle)
 
 
 def ordre_disciplines(par_tableau):
@@ -272,12 +285,15 @@ def build_player_stats(player, events_par_tableau):
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)
             entry["meilleur_partenaire"] = meilleur_partenaire(events)
+            entry["meilleur_partenaire_points"] = meilleur_partenaire(events, cle="points_cote")
         par_tableau[tableau] = entry
 
     partenaire_double_mixte = discipline_stats_partenaire_combinee(
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
     meilleur_partenaire_dm = meilleur_partenaire_combine(
         events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []))
+    meilleur_partenaire_dm_points = meilleur_partenaire_combine(
+        events_par_tableau.get("Double", []), events_par_tableau.get("Mixte", []), cle="points_cote")
 
     tous_matchs = [m for events in events_par_tableau.values() for e in events for m in e["matchs"]]
     stats_globales = _agg_matchs(tous_matchs)
@@ -303,6 +319,7 @@ def build_player_stats(player, events_par_tableau):
         "par_tableau": par_tableau,
         "partenaire_double_mixte": partenaire_double_mixte,
         "meilleur_partenaire_double_mixte": meilleur_partenaire_dm,
+        "meilleur_partenaire_double_mixte_points": meilleur_partenaire_dm_points,
         "ordre_disciplines": ordre_disciplines(par_tableau),
         "progression": diff_classement(player),
         "global": {

@@ -150,6 +150,21 @@ def _side_clubs(div):
     return [a.get_text(strip=True) for a in div.find_all("a")]
 
 
+def _side_points(div):
+    """Valeurs numériques (peuvent être négatives) d'un des deux blocs de
+    row-details-points : les points de cote gagnés/perdus sur ce match.
+    Autant de valeurs que d'entrées côté (1 en simple, 2 en double/mixte,
+    généralement identiques pour les 2 coéquipiers - même match, même
+    résultat pour les deux)."""
+    valeurs = []
+    for span in div.find_all("span"):
+        try:
+            valeurs.append(int(span.get_text(strip=True)))
+        except ValueError:
+            continue
+    return valeurs
+
+
 def parse_match_row(tr):
     """Une ligne <tr> de row-details (un match) -> dict, ou None si la ligne
     n'a pas de score exploitable (bye, forfait non chiffré...).
@@ -183,6 +198,12 @@ def parse_match_row(tr):
     mine_side = entries[mine_idx]
     me_pos = next(i for i, (_, is_me, _) in enumerate(mine_side) if is_me)
     partner_pos = next((i for i in range(len(mine_side)) if i != me_pos), None)
+    # anomalie constatée sur le site : parfois les deux entrées d'un même
+    # côté ressortent "moi" (aucun lien) - on se retrouverait avec
+    # partenaire = moi-même. On préfère ignorer le partenaire plutôt que de
+    # mal l'attribuer.
+    if partner_pos is not None and mine_side[partner_pos][0] == mine_side[me_pos][0]:
+        partner_pos = None
     partenaire_nom = mine_side[partner_pos][0] if partner_pos is not None else None
     partenaire_licence = mine_side[partner_pos][2] if partner_pos is not None else None
     partenaire_club = (mine_clubs[partner_pos]
@@ -192,6 +213,12 @@ def parse_match_row(tr):
     if score is None:
         return None
     sets_gagnes, sets_perdus = score
+
+    points_div = cells[3].find(attrs={"data-testid": "row-details-points"})
+    points_sides = points_div.find_all("div", recursive=False) if points_div else []
+    points_valeurs = [_side_points(side) for side in points_sides]
+    points_cote = (points_valeurs[mine_idx][0]
+                    if len(points_valeurs) > mine_idx and points_valeurs[mine_idx] else None)
 
     tournoi_id = None
     action = cells[8].find(attrs={"data-testid": "row-details-action"})
@@ -212,6 +239,7 @@ def parse_match_row(tr):
         "sets_gagnes": sets_gagnes,
         "sets_perdus": sets_perdus,
         "victoire": sets_gagnes > sets_perdus,
+        "points_cote": points_cote,
         "tournoi_id": tournoi_id,
     }
 
