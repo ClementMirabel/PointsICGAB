@@ -29,6 +29,8 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Matchs avec partenaire club", "% avec partenaire club",
             "Matchs sans partenaire club", "% sans partenaire club",
             "Delta % (avec - sans)",
+            "Meilleur partenaire", "Matchs avec lui/elle", "Victoires avec lui/elle",
+            "% victoire avec lui/elle", "Indice perf. avec lui/elle",
         ]
     headers += ["Indice performance", "Indice niveau", "Indice global"]
     ws.append(headers)
@@ -54,6 +56,12 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
                 sans["matchs_joues"], _pct(sans["pct_victoire"]),
                 _pct(p["delta_pct"]),
             ]
+            mp = entry["meilleur_partenaire"]
+            if mp:
+                row += [mp["nom"], mp["matchs_joues"], mp["victoires"],
+                        _pct(mp["pct_victoire"]), round(mp["indice_performance"], 2)]
+            else:
+                row += [None, None, None, None, None]
         row += [_pct(entry["indice_performance"]), entry["indice_niveau"], _pct(entry["indice_global"])]
         ws.append(row)
 

@@ -127,14 +127,22 @@ def _parse_score(score_table, mine_idx):
 
 
 def _side_entries(div):
-    """Un des deux blocs de row-details-name -> liste de (nom, est_moi).
-    est_moi=True si l'élément n'est pas un lien : le site ne linke jamais
-    vers son propre profil, seulement vers celui des autres joueurs."""
+    """Un des deux blocs de row-details-name -> liste de (nom, est_moi,
+    licence). est_moi=True si l'élément n'est pas un lien : le site ne
+    linke jamais vers son propre profil, seulement vers celui des autres
+    joueurs. licence=None pour "moi", ou si le lien ne suit pas le format
+    /joueur/<licence>."""
     entries = []
     for el in div.find_all(["a", "span"], recursive=False):
         text = el.get_text(strip=True)
-        if text:
-            entries.append((text, el.name != "a"))
+        if not text:
+            continue
+        licence = None
+        if el.name == "a":
+            href = el.get("href", "")
+            if href.startswith("/joueur/"):
+                licence = href.rsplit("/", 1)[-1]
+        entries.append((text, el.name != "a", licence))
     return entries
 
 
@@ -164,7 +172,7 @@ def parse_match_row(tr):
     name_sides = name_div.find_all("div", recursive=False) if name_div else []
     entries = [_side_entries(side) for side in name_sides]
 
-    mine_idx = next((i for i, side in enumerate(entries) if any(is_me for _, is_me in side)), None)
+    mine_idx = next((i for i, side in enumerate(entries) if any(is_me for _, is_me, _ in side)), None)
     if mine_idx is None or len(entries) != 2:
         return None  # ne devrait pas arriver : on visite toujours sa propre page
     opp_idx = 1 - mine_idx
@@ -173,9 +181,10 @@ def parse_match_row(tr):
     # partenaire (double uniquement) : l'autre entrée de mon côté, celle qui
     # n'est pas "moi". None en simple (une seule entrée de mon côté).
     mine_side = entries[mine_idx]
-    me_pos = next(i for i, (_, is_me) in enumerate(mine_side) if is_me)
+    me_pos = next(i for i, (_, is_me, _) in enumerate(mine_side) if is_me)
     partner_pos = next((i for i in range(len(mine_side)) if i != me_pos), None)
     partenaire_nom = mine_side[partner_pos][0] if partner_pos is not None else None
+    partenaire_licence = mine_side[partner_pos][2] if partner_pos is not None else None
     partenaire_club = (mine_clubs[partner_pos]
                         if partner_pos is not None and len(mine_clubs) > partner_pos else None)
 
@@ -195,10 +204,11 @@ def parse_match_row(tr):
         "tour": tour,
         "mes_clubs": mine_clubs,
         "clubs_adverses": clubs[opp_idx] if len(clubs) > opp_idx else [],
-        "mes_noms": [n for n, _ in entries[mine_idx]],
+        "mes_noms": [n for n, _, _ in entries[mine_idx]],
         "partenaire_nom": partenaire_nom,
+        "partenaire_licence": partenaire_licence,
         "partenaire_club": partenaire_club,
-        "noms_adverses": [n for n, _ in entries[opp_idx]],
+        "noms_adverses": [n for n, _, _ in entries[opp_idx]],
         "sets_gagnes": sets_gagnes,
         "sets_perdus": sets_perdus,
         "victoire": sets_gagnes > sets_perdus,

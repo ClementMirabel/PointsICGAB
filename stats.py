@@ -3,6 +3,7 @@ Traitement des résultats scrapés (results.py) en statistiques par joueur :
 victoires/défaites par tableau, split partenaire club/hors club, indices,
 et dédoublonnage des tournois/interclubs.
 """
+from collections import defaultdict
 from datetime import date, timedelta
 
 import holidays as holidays_lib
@@ -76,6 +77,40 @@ def discipline_stats_partenaire_combinee(events_double, events_mixte):
     partenaire, peu importe le tableau)."""
     matchs = [m for events in (events_double, events_mixte) for e in events for m in e["matchs"]]
     return _split_partenaire(matchs)
+
+
+def meilleur_partenaire(events):
+    """Double ou Mixte : le partenaire avec lequel le joueur a le meilleur
+    indice de performance (victoires x taux de victoire - même formule que
+    indice_performance, pas de seuil arbitraire : un partenaire joué 1 fois
+    et gagné donne un indice de 1, tandis qu'un partenaire joué 5 fois et
+    gagné 5 fois donne 5 - le volume l'emporte naturellement). Regroupe par
+    licence quand connue, par nom sinon (adversaire jamais identifié en
+    double, mais un partenaire l'est presque toujours). None si le joueur
+    n'a aucun match dans ce tableau."""
+    par_partenaire = defaultdict(list)
+    for e in events:
+        for m in e["matchs"]:
+            cle = m["partenaire_licence"] or m["partenaire_nom"]
+            if cle is None:
+                continue
+            par_partenaire[cle].append(m)
+
+    meilleur = None
+    meilleur_indice = -1
+    for matchs in par_partenaire.values():
+        agg = _agg_matchs(matchs)
+        indice = indice_performance(agg)
+        if indice > meilleur_indice:
+            meilleur_indice = indice
+            meilleur = {
+                "nom": matchs[0]["partenaire_nom"],
+                "matchs_joues": agg["matchs_joues"],
+                "victoires": agg["victoires"],
+                "pct_victoire": agg["pct_victoire"],
+                "indice_performance": indice,
+            }
+    return meilleur
 
 
 def diff_classement(player):
@@ -217,6 +252,7 @@ def build_player_stats(player, events_par_tableau):
         }
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)
+            entry["meilleur_partenaire"] = meilleur_partenaire(events)
         par_tableau[tableau] = entry
 
     partenaire_double_mixte = discipline_stats_partenaire_combinee(
