@@ -80,13 +80,15 @@ def fetch_discipline(session, discipline_id):
     for row in table.find("tbody").find_all("tr"):
         cells = row.find_all("td")
         licence = cells[4].get_text(strip=True)
+        rang = cells[0].get_text(strip=True)
         classement = cells[8].get_text(strip=True)
         points = cells[9].get_text(strip=True)
         # jeunes joueurs pas encore classés (Minibad, Poussin...) : pas de cote
         if not points:
-            classement, points = None, None
+            classement, points, rang = None, None, None
         players[licence] = {
             "Nom": cells[3].get_text(strip=True),
+            "Rang": int(rang) if rang else None,  # position dans le club pour ce tableau (1, 2, 3...)
             "Classement": classement,
             "Points": float(points) if points else None,
         }
@@ -105,16 +107,19 @@ def build_players(session):
                 "Sexe": sexe,
                 "Classement Actuel": {},
                 "Points Actuel": {},
+                "Rang Actuel": {},
             })
             if infos["Classement"] is None:
                 continue
             colonne, _ = DISCIPLINES[discipline_id]
             player["Classement Actuel"][colonne] = infos["Classement"]
             player["Points Actuel"][colonne] = infos["Points"]
+            player["Rang Actuel"][colonne] = infos["Rang"]
 
     for player in players.values():
         for colonne in ("Simple", "Double", "Mixte"):
             player["Classement Actuel"].setdefault(colonne, DEFAULT_CLASSEMENT)
             player["Points Actuel"].setdefault(colonne, DEFAULT_POINTS)
+            player["Rang Actuel"].setdefault(colonne, None)
 
     return list(players.values())

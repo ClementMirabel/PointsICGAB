@@ -16,17 +16,16 @@ else:
 
 
 def compute_IC_points(player):
-    best_t = 11
-    best_t_pts = 0
-
-    for k in player["Classement Actuel"].keys():
-        val = roster.TABLEAUX.index(player["Classement Actuel"][k])
-        if val <= best_t:
-            best_t = val
-            best_t_pts = max(best_t_pts, player["Points Actuel"][k])
+    tiers = {k: roster.TABLEAUX.index(player["Classement Actuel"][k]) for k in ("Simple", "Double", "Mixte")}
+    best_t = min(tiers.values())
+    # parmi les disciplines à ce meilleur tableau (tier), celle avec le plus
+    # de points sert de référence pour "Points/Rang meilleur tableau"
+    candidats = [k for k, val in tiers.items() if val == best_t]
+    ref = max(candidats, key=lambda k: player["Points Actuel"][k])
 
     player["Meilleur tableau"] = roster.TABLEAUX[best_t]
-    player["Points meilleur tableau"] = best_t_pts
+    player["Points meilleur tableau"] = player["Points Actuel"][ref]
+    player["Rang meilleur tableau"] = player.get("Rang Actuel", {}).get(ref)
     player["Valeur IC"] = roster.valeur_ic(
         player["Meilleur tableau"],
         player["Sexe"],
