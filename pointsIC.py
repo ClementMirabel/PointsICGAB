@@ -16,52 +16,24 @@ else:
 
 
 def compute_IC_points(player):
-    t = ["N1", "N2", "N3", "R4", "R5", "R6", "D7", "D8", "D9", "P10", "P11", "P12"]
     best_t = 11
     best_t_pts = 0
 
     for k in player["Classement Actuel"].keys():
-        val = t.index(player["Classement Actuel"][k])
+        val = roster.TABLEAUX.index(player["Classement Actuel"][k])
         if val <= best_t:
             best_t = val
             best_t_pts = max(best_t_pts, player["Points Actuel"][k])
 
-    player["Meilleur tableau"] = t[best_t]
+    player["Meilleur tableau"] = roster.TABLEAUX[best_t]
     player["Points meilleur tableau"] = best_t_pts
-
-    if player["Meilleur tableau"] == "D7":
-        player["Valeur IC"] = 12
-    elif player["Meilleur tableau"] == "R6":
-        player["Valeur IC"] = 18
-    elif player["Meilleur tableau"] == "R5":
-        player["Valeur IC"] = 24
-    elif player["Meilleur tableau"] == "R4":
-        player["Valeur IC"] = 30
-    elif player["Meilleur tableau"] == "N3":
-        player["Valeur IC"] = 39
-    elif player["Meilleur tableau"] == "N2":
-        player["Valeur IC"] = 48
-    elif player["Meilleur tableau"] == "D8":
-        player["Valeur IC"] = 9
-    elif player["Meilleur tableau"] == "D9":
-        player["Valeur IC"] = 6
-    elif player["Meilleur tableau"] == "P10":
-        player["Valeur IC"] = 3
-    elif player["Meilleur tableau"] == "P11":
-        player["Valeur IC"] = 2
-    elif player["Meilleur tableau"] == "P12":
-        player["Valeur IC"] = 1
-    elif player["Meilleur tableau"] == "N1":
-        if (player["Sexe"] == "F" and (player["Points Actuel"]["Simple"]>=3500 or player["Points Actuel"]["Double"]>=3500 or player["Points Actuel"]["Mixte"]>=4400)) or (player["Sexe"] == "H" and (player["Points Actuel"]["Simple"]>=4400 or player["Points Actuel"]["Double"]>=4400 or player["Points Actuel"]["Mixte"]>=4400)):
-            player["Valeur IC"] = 93
-        elif (player["Sexe"] == "F" and (player["Points Actuel"]["Simple"]>=3200 or player["Points Actuel"]["Double"]>=3200 or player["Points Actuel"]["Mixte"]>=4100)) or (player["Sexe"] == "H" and (player["Points Actuel"]["Simple"]>=4100 or player["Points Actuel"]["Double"]>=4100 or player["Points Actuel"]["Mixte"]>=4100)):
-            player["Valeur IC"] = 84
-        elif (player["Sexe"] == "F" and (player["Points Actuel"]["Simple"]>=2800 or player["Points Actuel"]["Double"]>=2800 or player["Points Actuel"]["Mixte"]>=3500)) or (player["Sexe"] == "H" and (player["Points Actuel"]["Simple"]>=3500 or player["Points Actuel"]["Double"]>=3500 or player["Points Actuel"]["Mixte"]>=3500)):
-            player["Valeur IC"] = 75
-        elif (player["Sexe"] == "F" and (player["Points Actuel"]["Simple"]>=2700 or player["Points Actuel"]["Double"]>=2700 or player["Points Actuel"]["Mixte"]>=3400)) or (player["Sexe"] == "H" and (player["Points Actuel"]["Simple"]>=3400 or player["Points Actuel"]["Double"]>=3400 or player["Points Actuel"]["Mixte"]>=3400)):
-            player["Valeur IC"] = 66
-        else:
-            player["Valeur IC"] = 57
+    player["Valeur IC"] = roster.valeur_ic(
+        player["Meilleur tableau"],
+        player["Sexe"],
+        player["Points Actuel"]["Simple"],
+        player["Points Actuel"]["Double"],
+        player["Points Actuel"]["Mixte"],
+    )
 
     return player
 

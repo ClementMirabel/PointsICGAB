@@ -23,6 +23,37 @@ DISCIPLINES = {
 DEFAULT_CLASSEMENT = "P12"
 DEFAULT_POINTS = 0.0
 
+# du meilleur (N1) au moins bon (P12)
+TABLEAUX = ["N1", "N2", "N3", "R4", "R5", "R6", "D7", "D8", "D9", "P10", "P11", "P12"]
+
+VALEUR_IC_PAR_TABLEAU = {
+    "R6": 18, "R5": 24, "R4": 30, "N3": 39, "N2": 48,
+    "D7": 12, "D8": 9, "D9": 6, "P10": 3, "P11": 2, "P12": 1,
+}
+
+# (seuil Hommes, seuil Femmes en Simple/Double, seuil Femmes en Mixte, valeur)
+VALEUR_IC_N1_SEUILS = [
+    (4400, 3500, 4400, 93),
+    (4100, 3200, 4100, 84),
+    (3500, 2800, 3500, 75),
+    (3400, 2700, 3400, 66),
+]
+
+
+def valeur_ic(tableau, sexe, points_simple, points_double, points_mixte):
+    """Barème IC : plus le tableau est haut, plus la valeur est élevée. Pour
+    N1, la valeur dépend en plus du nombre de points (paliers différents
+    Hommes/Femmes) dans n'importe lequel des 3 tableaux."""
+    if tableau != "N1":
+        return VALEUR_IC_PAR_TABLEAU.get(tableau, 0)
+
+    for seuil_h, seuil_f, seuil_f_mixte, valeur in VALEUR_IC_N1_SEUILS:
+        if sexe == "H" and (points_simple >= seuil_h or points_double >= seuil_h or points_mixte >= seuil_h):
+            return valeur
+        if sexe == "F" and (points_simple >= seuil_f or points_double >= seuil_f or points_mixte >= seuil_f_mixte):
+            return valeur
+    return 57
+
 
 def new_session():
     session = requests.Session()
