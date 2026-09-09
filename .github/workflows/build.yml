@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - "pointsIC.py"
+      - "roster.py"
       - "pointsIC.spec"
       - "requirements.txt"
       - "macos/**"
