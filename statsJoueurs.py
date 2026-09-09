@@ -87,9 +87,12 @@ def login(driver, licence, password):
         return False
 
 
+CLICK_PAUSE = 0.4  # laisse le temps au re-rendu React après un clic
+
+
 def click(driver, element):
     driver.execute_script("arguments[0].click();", element)
-    time.sleep(1)  # laisse le temps au contenu de charger après le clic
+    time.sleep(CLICK_PAUSE)
 
 
 def expand_all_sections(driver):
@@ -105,19 +108,39 @@ def expand_all_sections(driver):
             print(f"  clic section {i} : {e}")
 
 
-def click_buttons_by_text(driver, text):
-    """Clique tous les boutons portant ce texte (plusieurs groupes Simple/Double/
-    Mixte coexistent sur la page : Résultats, Nombre de points/Classement,
-    Progression). Renvoie le nombre de boutons cliqués.
+def expand_section_by_text(driver, texte):
+    """Déplie UN SEUL panneau repliable dont le libellé contient `texte`,
+    sans toucher aux autres (plus rapide que expand_all_sections quand on
+    n'a besoin que d'un panneau précis, ex: "Évolution classement" sur la
+    page classement-historique, qui contient aussi Résultats/Progression
+    qu'on n'a pas besoin d'ouvrir sur cette page)."""
+    for item in driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']"):
+        if texte in (item.get_attribute("textContent") or ""):
+            click(driver, item)
+            return True
+    return False
+
+
+def click_buttons_by_text(driver, text, container_testid=None):
+    """Clique tous les boutons portant ce texte. Par défaut, plusieurs
+    groupes Simple/Double/Mixte coexistent sur la page (Résultats, Nombre
+    de points/Classement, Progression) et sont tous cliqués - passer
+    container_testid pour se limiter à un seul (plus rapide quand on n'a
+    besoin de basculer qu'une seule section). Renvoie le nombre de boutons
+    cliqués.
 
     Recherche les boutons un par un, juste avant chaque clic : cliquer sur
     l'un d'eux provoque un re-rendu React qui invalide (stale) les
     références des autres boutons déjà récupérés dans une même liste.
     """
+    selector = "button[data-testid='button']"
+    if container_testid:
+        selector = f"div[data-testid='{container_testid}'] {selector}"
+
     n = 0
     for _ in range(10):  # garde-fou : jamais plus de 10 groupes sur la page
         target = None
-        for btn in driver.find_elements(By.CSS_SELECTOR, "button[data-testid='button']"):
+        for btn in driver.find_elements(By.CSS_SELECTOR, selector):
             # .text ne lit que le texte visible à l'écran (souvent vide pour
             # un bouton hors viewport en headless) ; textContent lit le DOM,
             # fiable peu importe le scroll.
@@ -209,13 +232,19 @@ def scrape_player(driver, player):
     except TimeoutException:
         print("  chargement trop long, on continue quand même.")
 
-    expand_all_sections(driver)
+    # seul le panneau "Résultats" nous sert sur cette page (Nombre de
+    # points/Classement, Ratio victoires/défaites et Progression ne sont
+    # plus utilisés depuis le passage à la page classement-historique)
+    expand_section_by_text(driver, "Résultats")
     events = {"Simple": results.parse_results(_soup(driver))}
 
-    click_buttons_by_text(driver, "Double")
+    # limité à player-results : les autres groupes Simple/Double/Mixte de
+    # la page (Nombre de points/Classement, Progression) n'ont plus besoin
+    # d'être basculés
+    click_buttons_by_text(driver, "Double", container_testid="player-results")
     events["Double"] = results.parse_results(_soup(driver))
 
-    click_buttons_by_text(driver, "Mixte")
+    click_buttons_by_text(driver, "Mixte", container_testid="player-results")
     events["Mixte"] = results.parse_results(_soup(driver))
 
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
@@ -224,7 +253,7 @@ def scrape_player(driver, player):
             (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
     except TimeoutException:
         print("  chargement trop long (classement-historique), on continue quand même.")
-    expand_all_sections(driver)
+    expand_section_by_text(driver, "Évolution classement")
     evolution = results.parse_classement_evolution(_soup(driver))
     player["Classement 1er septembre"] = results.find_september_1(evolution, _current_season_start_year())
 
