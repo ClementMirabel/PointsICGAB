@@ -150,6 +150,22 @@ def _side_clubs(div):
     return [a.get_text(strip=True) for a in div.find_all("a")]
 
 
+def _normalise_nom(nom):
+    return " ".join(nom.upper().split())
+
+
+def _trouve_par_nom(sides, mon_nom):
+    """Index du côté (ou de l'entrée) dont un des noms correspond à
+    `mon_nom` (comparaison insensible à la casse/espaces), ou None."""
+    if not mon_nom:
+        return None
+    cible = _normalise_nom(mon_nom)
+    for i, side in enumerate(sides):
+        if any(_normalise_nom(nom) == cible for nom, _, _ in side):
+            return i
+    return None
+
+
 def _side_points(div):
     """Valeurs numériques (peuvent être négatives) d'un des deux blocs de
     row-details-points : les points de cote gagnés/perdus sur ce match.
@@ -165,13 +181,19 @@ def _side_points(div):
     return valeurs
 
 
-def parse_match_row(tr):
+def parse_match_row(tr, mon_nom=None):
     """Une ligne <tr> de row-details (un match) -> dict, ou None si la ligne
     n'a pas de score exploitable (bye, forfait non chiffré...).
 
     Important : le site liste toujours le côté vainqueur en premier (rangée
-    du haut), pas "moi" en premier - "moi" doit donc être identifié par
-    l'absence de lien (voir _side_entries), pas par la position.
+    du haut), pas "moi" en premier. "moi" est identifié en priorité par
+    correspondance de nom avec `mon_nom` (le nom du joueur dont on scrape
+    la page, connu via le roster) ; à défaut, on retombe sur l'absence de
+    lien (voir _side_entries - le site ne linke normalement pas vers son
+    propre profil). Ce repli peut se tromper quand un AUTRE joueur (souvent
+    hors-club ou invité) n'a pas non plus de profil "linkable" - constaté
+    sur des matchs Mixte où l'adversaire ressortait comme "moi". D'où la
+    priorité au nom quand on le connaît.
     """
     cells = tr.find_all("td", recursive=False)
     if len(cells) < 9:
@@ -187,7 +209,9 @@ def parse_match_row(tr):
     name_sides = name_div.find_all("div", recursive=False) if name_div else []
     entries = [_side_entries(side) for side in name_sides]
 
-    mine_idx = next((i for i, side in enumerate(entries) if any(is_me for _, is_me, _ in side)), None)
+    mine_idx = _trouve_par_nom(entries, mon_nom)
+    if mine_idx is None:
+        mine_idx = next((i for i, side in enumerate(entries) if any(is_me for _, is_me, _ in side)), None)
     if mine_idx is None or len(entries) != 2:
         return None  # ne devrait pas arriver : on visite toujours sa propre page
     opp_idx = 1 - mine_idx
@@ -196,7 +220,15 @@ def parse_match_row(tr):
     # partenaire (double uniquement) : l'autre entrée de mon côté, celle qui
     # n'est pas "moi". None en simple (une seule entrée de mon côté).
     mine_side = entries[mine_idx]
-    me_pos = next(i for i, (_, is_me, _) in enumerate(mine_side) if is_me)
+    if mon_nom:
+        cible = _normalise_nom(mon_nom)
+        me_pos = next((i for i, (nom, _, _) in enumerate(mine_side) if _normalise_nom(nom) == cible), None)
+    else:
+        me_pos = None
+    if me_pos is None:
+        me_pos = next((i for i, (_, is_me, _) in enumerate(mine_side) if is_me), None)
+    if me_pos is None:
+        return None  # ne devrait vraiment pas arriver
     partner_pos = next((i for i in range(len(mine_side)) if i != me_pos), None)
     # anomalie constatée sur le site : parfois les deux entrées d'un même
     # côté ressortent "moi" (aucun lien) - on se retrouverait avec
@@ -244,12 +276,14 @@ def parse_match_row(tr):
     }
 
 
-def parse_results(soup):
+def parse_results(soup, mon_nom=None):
     """Section "Résultats" (data-testid='player-results') pour le tableau
     actuellement affiché (Simple/Double/Mixte) -> liste d'événements, chacun
     avec ses matchs imbriqués. Un "événement" est soit une rencontre
     d'Interclubs (evenement commence par "Interclubs"), soit un tournoi
-    individuel."""
+    individuel. `mon_nom` (nom du joueur dont on scrape la page, ex:
+    player["Nom"] du roster) permet d'identifier "moi" de façon fiable dans
+    chaque match - voir parse_match_row."""
     section = soup.find(attrs={"data-testid": "player-results"})
     if section is None:
         return []
@@ -289,7 +323,7 @@ def parse_results(soup):
         if detail_tbody is None:
             continue
         for match_tr in detail_tbody.find_all("tr", recursive=False):
-            match = parse_match_row(match_tr)
+            match = parse_match_row(match_tr, mon_nom)
             if match is not None:
                 pending_event["matchs"].append(match)
 

@@ -221,7 +221,7 @@ def _current_season_start_year(today=None):
     return today.year if today.month >= 9 else today.year - 1
 
 
-def _parse_results_with_retry(driver, tentatives=4, pause=0.8):
+def _parse_results_with_retry(driver, mon_nom=None, tentatives=4, pause=0.8):
     """results.parse_results, avec un filet de sécurité : si la section est
     encore vide (0 événement - le rendu n'a peut-être pas fini de monter),
     ou si des événements sont trouvés mais aucun match dedans (le détail
@@ -230,10 +230,15 @@ def _parse_results_with_retry(driver, tentatives=4, pause=0.8):
     pour un tableau réellement vide (ex: joueur qui n'a jamais joué de
     Mixte), mais évite de perdre silencieusement des joueurs entiers -
     constaté : jusqu'à 16 joueurs sur 73 revenaient vides dans Bilan
-    joueur avec l'ancienne version qui ne retentait pas sur "0 événement"."""
+    joueur avec l'ancienne version qui ne retentait pas sur "0 événement".
+
+    `mon_nom` (player["Nom"]) est transmis à parse_results pour identifier
+    "moi" de façon fiable dans chaque match (voir results.parse_match_row)
+    plutôt que par la seule absence de lien, qui peut se tromper si un
+    adversaire/partenaire hors-club n'a pas non plus de profil "linkable"."""
     events = []
     for tentative in range(tentatives):
-        events = results.parse_results(_soup(driver))
+        events = results.parse_results(_soup(driver), mon_nom)
         nb_matchs = sum(len(e["matchs"]) for e in events)
         if events and nb_matchs > 0:
             return events
@@ -273,16 +278,16 @@ def scrape_player(driver, player):
     # points/Classement, Ratio victoires/défaites et Progression ne sont
     # plus utilisés depuis le passage à la page classement-historique)
     expand_section_by_text(driver, "Résultats")
-    events = {"Simple": _parse_results_with_retry(driver)}
+    events = {"Simple": _parse_results_with_retry(driver, player["Nom"])}
 
     # limité à player-results : les autres groupes Simple/Double/Mixte de
     # la page (Nombre de points/Classement, Progression) n'ont plus besoin
     # d'être basculés
     click_buttons_by_text(driver, "Double", container_testid="player-results")
-    events["Double"] = _parse_results_with_retry(driver)
+    events["Double"] = _parse_results_with_retry(driver, player["Nom"])
 
     click_buttons_by_text(driver, "Mixte", container_testid="player-results")
-    events["Mixte"] = _parse_results_with_retry(driver)
+    events["Mixte"] = _parse_results_with_retry(driver, player["Nom"])
 
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
     try:
