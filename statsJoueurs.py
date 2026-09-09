@@ -167,6 +167,21 @@ def dump_player_debug(driver, licence):
         print(f"  '{tableau}' : {n} bouton(s) cliqué(s)")
         dump_html(driver, licence, tableau.lower())
 
+    # page séparée /joueur/<licence>/classement-historique (pas un panel de
+    # la page principale - lien "classement historique" en haut de page)
+    driver.get(f"https://myffbad.fr/joueur/{licence}/classement-historique")
+    try:
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
+    except TimeoutException:
+        print("  page classement-historique : chargement trop long, on continue quand même.")
+    expand_all_sections(driver)
+    dump_html(driver, licence, "historique_simple")
+    for tableau in ("Double", "Mixte"):
+        n = click_buttons_by_text(driver, tableau)
+        print(f"  historique '{tableau}' : {n} bouton(s) cliqué(s)")
+        dump_html(driver, licence, f"historique_{tableau.lower()}")
+
 
 def _soup(driver):
     return BeautifulSoup(driver.page_source, "html.parser")
