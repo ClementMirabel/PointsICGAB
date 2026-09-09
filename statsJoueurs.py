@@ -5,6 +5,9 @@ septembre, indices, tournois) pour tout le club.
     python statsJoueurs.py                  # tout le roster -> statsJoueurs.xlsx
     python statsJoueurs.py 06627061 00123456 # juste ces licences (test rapide)
     python statsJoueurs.py --debug 06627061  # dump HTML brut pour inspection
+    python statsJoueurs.py --check-collapse 06627061  # les panneaux ont-ils
+        # besoin d'un clic pour livrer leurs données, ou sont-elles déjà
+        # dans le DOM avant tout clic ? (diagnostic de perf)
 
 Nécessite une connexion à myffbad.fr ("Résultats" et l'historique de
 classement ne sont pas publics, contrairement à pointsIC.py) : licence et
@@ -292,6 +295,55 @@ def main_debug(licence_ids):
         driver.quit()
 
 
+def check_collapse_hypothesis(licence_id):
+    """Diagnostic : les panneaux repliables (Résultats, Évolution
+    classement) affichent-ils des données déjà présentes dans le DOM avant
+    tout clic (juste cachées en CSS, comme pour le détail d'un match dans
+    un tournoi), ou seulement après avoir cliqué sur le panneau (contenu
+    monté à la demande) ? Si c'est le premier cas, on peut supprimer les
+    clics d'expansion et gagner encore du temps de scraping."""
+    my_licence, my_password = get_credentials()
+    driver = new_driver()
+    try:
+        print("Connexion...")
+        if not login(driver, my_licence, my_password):
+            print("Connexion échouée.")
+            return
+        print("Connecté.")
+
+        driver.get(f"https://myffbad.fr/joueur/{licence_id}")
+        try:
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
+        except TimeoutException:
+            pass
+
+        events_avant = results.parse_results(_soup(driver))
+        nb_avant = sum(len(e["matchs"]) for e in events_avant)
+        print(f"Résultats AVANT clic : {len(events_avant)} événement(s), {nb_avant} match(s)")
+
+        expand_section_by_text(driver, "Résultats")
+        events_apres = results.parse_results(_soup(driver))
+        nb_apres = sum(len(e["matchs"]) for e in events_apres)
+        print(f"Résultats APRES clic : {len(events_apres)} événement(s), {nb_apres} match(s)")
+
+        driver.get(f"https://myffbad.fr/joueur/{licence_id}/classement-historique")
+        try:
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
+        except TimeoutException:
+            pass
+
+        evo_avant = results.parse_classement_evolution(_soup(driver))
+        print(f"Évolution classement AVANT clic : {len(evo_avant)} ligne(s)")
+
+        expand_section_by_text(driver, "Évolution classement")
+        evo_apres = results.parse_classement_evolution(_soup(driver))
+        print(f"Évolution classement APRES clic : {len(evo_apres)} ligne(s)")
+    finally:
+        driver.quit()
+
+
 # seuil minimum (meilleur tableau, tous discipline confondues) pour être
 # scrapé : chaque joueur nécessite une page authentifiée à plusieurs clics,
 # tout le club prendrait beaucoup trop de temps.
@@ -342,7 +394,10 @@ def main(licence_filter):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if "--debug" in args:
+    if "--check-collapse" in args:
+        args.remove("--check-collapse")
+        check_collapse_hypothesis(args[0] if args else input("Licence à tester : "))
+    elif "--debug" in args:
         args.remove("--debug")
         main_debug(args)
     else:
