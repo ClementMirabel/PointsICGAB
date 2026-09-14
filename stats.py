@@ -75,6 +75,15 @@ def cote_adverse_moyenne(matchs):
     return sum(valeurs) / len(valeurs) if valeurs else None
 
 
+def _est_forfait(m):
+    """Un forfait (adversaire absent) rapporte 0 point de cote - le barème
+    FFBad ne note pas un résultat qui n'a pas été réellement joué, même si
+    le site affiche un score générique du genre 21-0/21-0. À exclure des
+    stats basées sur le score (meilleure victoire/pire défaite, profil de
+    score) : un 21-0 par forfait n'est pas un "exploit"."""
+    return m["points_cote"] == 0
+
+
 def _fait_marquant(m):
     return {
         "adversaire_nom": " / ".join(m["noms_adverses"]),
@@ -85,19 +94,21 @@ def _fait_marquant(m):
 
 
 def meilleure_victoire(matchs):
-    """Parmi les matchs gagnés, celui contre l'adversaire à la cote la plus
-    haute - "l'exploit" de la saison. None si aucun match gagné avec une
-    cote adverse connue."""
-    candidats = [m for m in matchs if m["victoire"] and m["adversaire_cote"] is not None]
+    """Parmi les matchs gagnés (hors forfaits), celui contre l'adversaire à
+    la cote la plus haute - "l'exploit" de la saison. None si aucun match
+    gagné avec une cote adverse connue."""
+    candidats = [m for m in matchs
+                 if m["victoire"] and m["adversaire_cote"] is not None and not _est_forfait(m)]
     if not candidats:
         return None
     return _fait_marquant(max(candidats, key=lambda m: m["adversaire_cote"]))
 
 
 def pire_defaite(matchs):
-    """Parmi les matchs perdus, celui contre l'adversaire à la cote la plus
-    basse."""
-    candidats = [m for m in matchs if not m["victoire"] and m["adversaire_cote"] is not None]
+    """Parmi les matchs perdus (hors forfaits), celui contre l'adversaire à
+    la cote la plus basse."""
+    candidats = [m for m in matchs
+                 if not m["victoire"] and m["adversaire_cote"] is not None and not _est_forfait(m)]
     if not candidats:
         return None
     return _fait_marquant(min(candidats, key=lambda m: m["adversaire_cote"]))
@@ -152,13 +163,15 @@ def points_cote_moyens(matchs):
 
 
 def profil_score(matchs):
-    """Profil de score set par set (mon score, celui de l'adversaire) :
-    score moyen des deux côtés, plus gros écart infligé (set gagné avec la
-    plus grande marge) et reçu (set perdu avec la plus grande marge), et
-    points marqués en moyenne selon que le set est gagné ou perdu - un set
-    gagné à l'arraché (22-20) et un autre plié (21-5) comptent pareil pour
-    le nombre de sets, mais pas du tout pareil ici."""
-    tous_sets = [(mon, son) for m in matchs for mon, son in m["sets_detail"]]
+    """Profil de score set par set (mon score, celui de l'adversaire),
+    forfaits exclus (voir _est_forfait - leur score 21-0/21-0 générique
+    fausserait score_max_inflige en particulier) : score moyen des deux
+    côtés, plus gros écart infligé (set gagné avec la plus grande marge) et
+    reçu (set perdu avec la plus grande marge), et points marqués en
+    moyenne selon que le set est gagné ou perdu - un set gagné à l'arraché
+    (22-20) et un autre plié (21-5) comptent pareil pour le nombre de sets,
+    mais pas du tout pareil ici."""
+    tous_sets = [(mon, son) for m in matchs if not _est_forfait(m) for mon, son in m["sets_detail"]]
     if not tous_sets:
         return {
             "score_moyen_mien": None, "score_moyen_adverse": None,
