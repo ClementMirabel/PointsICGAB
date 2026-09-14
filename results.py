@@ -245,9 +245,18 @@ def parse_match_row(tr, mon_nom=None):
     hors-club ou invité) n'a pas non plus de profil "linkable" - constaté
     sur des matchs Mixte où l'adversaire ressortait comme "moi". D'où la
     priorité au nom quand on le connaît.
+
+    Un tournoi/poule qui contient plusieurs matchs a sa dernière cellule
+    (row-details-action, le lien "Voir la compétition") en rowspan sur
+    toute la poule : elle n'apparaît QUE sur la première ligne <tr> du
+    groupe (9 cellules), les suivantes n'en ont que 8. Un <tr> à 8 cellules
+    est donc un match tout à fait valide, juste sans lien de compétition
+    direct (tournoi_id reste None pour lui - sans conséquence : voir
+    stats.build_tournois, qui ne cherche qu'UN match avec tournoi_id non
+    None dans tout l'événement pour dédoublonner).
     """
     cells = tr.find_all("td", recursive=False)
-    if len(cells) < 9:
+    if len(cells) < 8:
         return None
 
     tour = cells[1].get_text(strip=True)
@@ -304,11 +313,12 @@ def parse_match_row(tr, mon_nom=None):
                     if len(points_valeurs) > mine_idx and points_valeurs[mine_idx] else None)
 
     tournoi_id = None
-    action = cells[8].find(attrs={"data-testid": "row-details-action"})
-    if action is not None:
-        href = action.get("href", "")
-        if href.startswith("/tournoi/resultats/"):
-            tournoi_id = href.rsplit("/", 1)[-1]
+    if len(cells) > 8:
+        action = cells[8].find(attrs={"data-testid": "row-details-action"})
+        if action is not None:
+            href = action.get("href", "")
+            if href.startswith("/tournoi/resultats/"):
+                tournoi_id = href.rsplit("/", 1)[-1]
 
     return {
         "tour": tour,
