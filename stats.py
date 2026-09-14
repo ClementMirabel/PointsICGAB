@@ -134,6 +134,23 @@ def indice_clutch(matchs):
     return resultat
 
 
+def points_cote_moyens(matchs):
+    """Moyenne des points de cote gagnés sur les matchs remportés, et
+    perdus sur les matchs perdus - deux moyennes séparées (les mélanger
+    donnerait juste points_cote_total/nb, qui dit moins sur l'ampleur
+    typique d'un gain ou d'une perte). Sert notamment à comparer
+    l'interclub au reste : les matchs y rapportent/coûtent-ils plus de
+    points en moyenne (barème FFBad différent en compétition par équipe) ?"""
+    gagnes = [m["points_cote"] for m in matchs if m["victoire"] and m["points_cote"] is not None]
+    perdus = [m["points_cote"] for m in matchs if not m["victoire"] and m["points_cote"] is not None]
+    return {
+        "moyenne_gagne": sum(gagnes) / len(gagnes) if gagnes else None,
+        "moyenne_perdu": sum(perdus) / len(perdus) if perdus else None,
+        "nb_gagnes": len(gagnes),
+        "nb_perdus": len(perdus),
+    }
+
+
 def _split_partenaire(matchs):
     avec_club = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     hors_club = [m for m in matchs
@@ -562,6 +579,7 @@ def build_player_stats(player, events_par_tableau):
             "sets_detail": m["sets_detail"],
             "est_interclub": e["est_interclub"],
             "intra_club": bool(m["clubs_adverses"]) and all(c == results.MY_CLUB for c in m["clubs_adverses"]),
+            "points_cote": m["points_cote"],
         }
         for tableau, events in events_par_tableau.items()
         for e in events

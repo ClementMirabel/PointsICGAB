@@ -832,6 +832,40 @@ def _write_club_sheet(wb, all_stats):
     ti_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, ti_headers, ti_first_row, ti_last_row)
 
+    # --- points de cote gagnés/perdus, total vs interclub, par catégorie ---
+    # "Diff interclub" (gagnés et perdus) : l'interclub rapporte/coûte-t-il
+    # plus de points en moyenne qu'un match hors interclub - barème FFBad
+    # différent en compétition par équipe ?
+    ws.append([])
+    ws.append(["Points de cote gagnés/perdus, par catégorie"])
+    pc_header_row = ws.max_row + 1
+    pc_headers = ["Catégorie", "Pts gagnés (total)", "Pts perdus (total)",
+                  "Pts gagnés (interclub)", "Pts perdus (interclub)",
+                  "Diff gagnés (interclub)", "Diff perdus (interclub)"]
+    ws.append(pc_headers)
+    pc_first_row = ws.max_row + 1
+
+    for cat in toutes_categories:
+        matchs_cat = matchs_par_categorie.get(cat, [])
+        matchs_ic = [m for m in matchs_cat if m["est_interclub"]]
+        total = stats.points_cote_moyens(matchs_cat)
+        interclub = stats.points_cote_moyens(matchs_ic)
+        gagne_t, perdu_t = total["moyenne_gagne"], total["moyenne_perdu"]
+        gagne_ic, perdu_ic = interclub["moyenne_gagne"], interclub["moyenne_perdu"]
+        diff_gagne = (gagne_ic - gagne_t) if gagne_t is not None and gagne_ic is not None else None
+        diff_perdu = (perdu_ic - perdu_t) if perdu_t is not None and perdu_ic is not None else None
+        ws.append([
+            cat,
+            round(gagne_t, 1) if gagne_t is not None else None,
+            round(perdu_t, 1) if perdu_t is not None else None,
+            round(gagne_ic, 1) if gagne_ic is not None else None,
+            round(perdu_ic, 1) if perdu_ic is not None else None,
+            round(diff_gagne, 1) if diff_gagne is not None else None,
+            round(diff_perdu, 1) if diff_perdu is not None else None,
+        ])
+    pc_last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, pc_headers, pc_first_row, pc_last_row)
+
     # --- clutchness club-wide, par catégorie ---
     ws.append([])
     ws.append(["Clutchness club (sets à 2 points d'écart ou moins)"])
