@@ -313,13 +313,22 @@ def _parse_evolution_with_retry(driver, tentatives=6, pause=0.5):
         tentatives, pause)
 
 
+def _parse_journal_with_retry(driver, tentatives=6, pause=0.5):
+    """Même principe que _parse_results_with_retry, pour le journal de suivi
+    (voir results.parse_journal_complet)."""
+    return _stabilise(
+        lambda: results.parse_journal_complet(_soup(driver)),
+        len,
+        tentatives, pause)
+
+
 def scrape_player(driver, player):
-    """Scrape la page d'un joueur du roster : résultats des 3 tableaux
-    (page principale) + classement/place/points au 1er septembre (page
-    classement-historique, panel "Évolution classement" - identique quel
-    que soit l'état des boutons Simple/Double/Mixte). Complète
-    player["Classement 1er septembre"] et renvoie events_par_tableau (voir
-    stats.build_tournois)."""
+    """Scrape la page d'un joueur du roster : résultats des 3 tableaux et
+    journal de suivi de la cote (page principale) + classement/place/points
+    au 1er septembre (page classement-historique, panel "Évolution
+    classement" - identique quel que soit l'état des boutons Simple/Double/
+    Mixte). Complète player["Classement 1er septembre"]/["Journal cote"] et
+    renvoie events_par_tableau (voir stats.build_tournois)."""
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}")
     try:
         WebDriverWait(driver, 15).until(EC.presence_of_element_located(
@@ -327,8 +336,7 @@ def scrape_player(driver, player):
     except TimeoutException:
         print("  chargement trop long, on continue quand même.")
 
-    # seul le panneau "Résultats" nous sert sur cette page (Nombre de
-    # points/Classement, Ratio victoires/défaites et Progression ne sont
+    # panneau "Résultats" (Ratio victoires/défaites et Progression ne sont
     # plus utilisés depuis le passage à la page classement-historique)
     expand_section_by_text(driver, "Résultats")
     charger_tous_les_resultats(driver)
@@ -345,6 +353,26 @@ def scrape_player(driver, player):
     click_buttons_by_text(driver, "Mixte", container_testid="player-results")
     charger_tous_les_resultats(driver)
     events["Mixte"] = _parse_results_with_retry(driver, player["Nom"])
+
+    # panneau "Nombre de points / Classement", basculé en mode tableau
+    # ("Journal de suivi") : historique (en général hebdomadaire) de la cote
+    # sur la saison - plus fin que l'évolution de classement ci-dessous (qui
+    # n'a que quelques points de mesure), sert aux stats min/max/moyenne de
+    # cote. Le bouton "Voir plus" y existe potentiellement aussi (même
+    # composant que pour Résultats) - même garde-fou par précaution.
+    expand_section_by_text(driver, "Nombre de points / Classement")
+    click_buttons_by_text(driver, "Journal de suivi", container_testid="player-ranking-elo")
+    charger_tous_les_resultats(driver, container_testid="player-ranking-elo")
+    journal = {"Simple": _parse_journal_with_retry(driver)}
+
+    click_buttons_by_text(driver, "Double", container_testid="player-ranking-elo")
+    charger_tous_les_resultats(driver, container_testid="player-ranking-elo")
+    journal["Double"] = _parse_journal_with_retry(driver)
+
+    click_buttons_by_text(driver, "Mixte", container_testid="player-ranking-elo")
+    charger_tous_les_resultats(driver, container_testid="player-ranking-elo")
+    journal["Mixte"] = _parse_journal_with_retry(driver)
+    player["Journal cote"] = journal
 
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
     try:

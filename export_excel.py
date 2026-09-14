@@ -34,16 +34,21 @@ FILL_N = _uni("FFE74C3C")  # rouge
 FILL_R = _uni("FF3498DB")  # bleu
 FILL_D = _uni("FF27AE60")  # vert
 FONT_BLANC = Font(color="FFFFFFFF")
+FONT_ROUGE = Font(color="FFE74C3C")
 
 FILL_SIMPLE = _uni("FFD5E8D4")
 FILL_DOUBLE = _uni("FFDAE8FC")
 FILL_MIXTE = _uni("FFFFE6CC")
 
-BORDURE_GROUPE = Side(style="medium", color="FF999999")
+BORDURE_GROUPE = Side(style="thick", color="FF999999")
 
 # colonnes texte qu'on ne colore pas en dégradé (déjà colorées autrement,
 # ou pas un indicateur de performance)
-CLASSEMENT_HEADERS = {"Classement", "Classement sept. S", "Classement sept. D", "Classement sept. M"}
+CLASSEMENT_HEADERS = {
+    "Classement",
+    "Classement sept. S", "Classement sept. D", "Classement sept. M",
+    "Classement actuel S", "Classement actuel D", "Classement actuel M",
+}
 TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
                 "Meilleur partenaire au club (si différent)", "Ordre tableau"} | CLASSEMENT_HEADERS
 
@@ -56,11 +61,11 @@ def _est_colonne_delta_partenaire(header):
 
 
 def _est_colonne_diff(header):
-    """Colonnes pouvant être négatives (diff cote/relative, gain de places) :
+    """Colonnes pouvant être négatives (diff cote, gain de places/tableau) :
     dégradé divergent rouge-blanc-vert centré sur 0, plutôt que le dégradé
     blanc->vert habituel (qui n'aurait pas de sens sur une échelle qui
     traverse 0)."""
-    return "Diff" in header or "Gain places" in header
+    return "Diff" in header or "Gain" in header
 
 
 def _pct(value):
@@ -105,23 +110,36 @@ def _degrade(ws, col_idx, first_row, last_row):
 
 
 def _barre_verte(ws, col_idx, first_row, last_row):
-    """Barre de données verte "classique" (une seule couleur, longueur
-    proportionnelle à la valeur) - pour le delta % avec/sans partenaire du
-    club : un dégradé rouge-blanc-vert par-dessus une barre bleue rendait la
-    colonne difficile à lire pour un delta qui reste presque toujours proche
-    de 0 ou positif."""
+    """Barre de données verte (longueur proportionnelle à la valeur) + texte
+    rouge quand la valeur est négative - pour le delta % avec/sans
+    partenaire du club (un dégradé rouge-blanc-vert par-dessus une barre
+    rendait la colonne difficile à lire pour un delta qui reste presque
+    toujours proche de 0 ou positif).
+
+    Excel sait nativement faire une barre en "remplissage plein" avec les
+    valeurs négatives en rouge et un axe à 0 (noir) au milieu de la cellule,
+    mais c'est une fonctionnalité étendue (Excel 2010+, extension x14 du
+    format) que openpyxl n'expose pas du tout dans son API d'écriture -
+    seule la barre "classique" (une couleur, dégradé, sans axe réglable) est
+    accessible ici. On s'en approche avec une barre verte + police rouge sur
+    le négatif ; le réglage exact (remplissage plein, axe noir au centre)
+    reste à faire à la main dans Excel si besoin - clic droit sur la colonne
+    > Mise en forme conditionnelle > Barres de données > Autres règles, une
+    fois le classeur ouvert."""
     if last_row < first_row:
         return
     col = get_column_letter(col_idx)
     plage = f"{col}{first_row}:{col}{last_row}"
     ws.conditional_formatting.add(plage, DataBarRule(
         start_type="min", end_type="max", color="FF63BE7B", showValue=True))
+    ws.conditional_formatting.add(
+        plage, FormulaRule(formula=[f"{col}{first_row}<0"], font=FONT_ROUGE))
 
 
 def _degrade_diverge(ws, col_idx, first_row, last_row):
     """Rouge (négatif) -> blanc (zéro) -> vert (positif), sans barre de
     données par-dessus (une barre en plus du dégradé rendait la colonne
-    difficile à lire) - pour gain de places / diff cote / diff relative, qui
+    difficile à lire) - pour gain de places/tableau, diff cote, qui
     peuvent être négatives."""
     if last_row < first_row:
         return
@@ -289,6 +307,15 @@ def _par_tableau_arrondi(prog, cle, echelle=1):
             for t in ("Simple", "Double", "Mixte")]
 
 
+def _cote_saison_valeurs(entries, cle, arrondi=False):
+    """entries : (simple, double, mixte) - entrées par_tableau, chacune avec
+    un sous-dict "cote_saison" (voir stats._cote_saison_stats)."""
+    valeurs = [e["cote_saison"][cle] for e in entries]
+    if arrondi:
+        return [round(v, 1) if v is not None else None for v in valeurs]
+    return valeurs
+
+
 def _write_bilan_sheet(wb, all_stats):
     ws = wb.create_sheet("Bilan joueur")
     headers = [
@@ -310,16 +337,26 @@ def _write_bilan_sheet(wb, all_stats):
         "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
         "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
         "Nb tournois individuels", "Nb interclubs (par jour)",
-        # regroupé par type de métrique (classements, puis places, puis
-        # cotes, puis diffs) plutôt que par tableau
+        # regroupé par thème (classement, puis place, puis cote), et DANS
+        # chaque thème sept./actuel/diff sont adjacents plutôt qu'éclatés
+        # dans des blocs séparés - on lit la progression d'un coup d'oeil.
         "Classement sept. S", "Classement sept. D", "Classement sept. M",
+        "Classement actuel S", "Classement actuel D", "Classement actuel M",
+        "Gain tableau S", "Gain tableau D", "Gain tableau M",
         "Place sept. S", "Place sept. D", "Place sept. M",
-        "Cote sept. S", "Cote sept. D", "Cote sept. M",
         "Place actuelle S", "Place actuelle D", "Place actuelle M",
-        "Cote actuelle S", "Cote actuelle D", "Cote actuelle M",
         "Gain places S", "Gain places D", "Gain places M",
+        "Cote sept. S", "Cote sept. D", "Cote sept. M",
+        "Cote actuelle S", "Cote actuelle D", "Cote actuelle M",
         "Diff cote S", "Diff cote D", "Diff cote M", "Diff cote cumulée",
-        "Diff relative S (%)", "Diff relative D (%)", "Diff relative M (%)", "Diff relative cumulée (%)",
+        # pas de version "relative" (%) du diff cote : sur cette échelle, un
+        # même diff_points représente un effort comparable quel que soit le
+        # niveau de départ - une version relative ferait paraître un joueur
+        # bas niveau plus "progressif" qu'un joueur haut niveau pour un
+        # progrès équivalent, ça n'a pas de sens (voir stats.diff_classement)
+        "Cote min S", "Cote min D", "Cote min M",
+        "Cote max S", "Cote max D", "Cote max M",
+        "Cote moyenne S", "Cote moyenne D", "Cote moyenne M",
     ]
     ws.append(headers)
 
@@ -349,15 +386,18 @@ def _write_bilan_sheet(wb, all_stats):
         row += [t["nb_tournois"], t["nb_interclubs"]]
 
         row += _par_tableau(prog, "septembre_classement")
+        row += _par_tableau(prog, "actuel_classement")
+        row += _par_tableau(prog, "gain_tableau")
         row += _par_tableau(prog, "septembre_rang")
-        row += _par_tableau(prog, "septembre_points")
         row += _par_tableau(prog, "actuel_rang")
-        row += _par_tableau(prog, "actuel_points")
         row += _par_tableau(prog, "gain_places")
+        row += _par_tableau(prog, "septembre_points")
+        row += _par_tableau(prog, "actuel_points")
         row += _par_tableau_arrondi(prog, "diff_points")
         row += [round(cum["diff_points"], 1) if cum["diff_points"] is not None else None]
-        row += _par_tableau_arrondi(prog, "diff_relatif", echelle=100)
-        row += [round(cum["diff_relatif"] * 100, 1) if cum["diff_relatif"] is not None else None]
+        row += _cote_saison_valeurs((simple, double, mixte), "cote_min")
+        row += _cote_saison_valeurs((simple, double, mixte), "cote_max")
+        row += _cote_saison_valeurs((simple, double, mixte), "cote_moyenne", arrondi=True)
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
@@ -369,9 +409,10 @@ def _write_bilan_sheet(wb, all_stats):
         ("Matchs avec partenaire club (D+M)", "Delta % partenaire (avec - sans)"),
         ("Meilleur partenaire (D+M)", "Points cote marqués ensemble"),
         ("Nb tournois individuels", "Nb interclubs (par jour)"),
-        ("Classement sept. S", "Classement sept. M"),
-        ("Place sept. S", "Cote actuelle M"),
-        ("Gain places S", "Diff relative cumulée (%)"),
+        ("Classement sept. S", "Gain tableau M"),
+        ("Place sept. S", "Gain places M"),
+        ("Cote sept. S", "Diff cote cumulée"),
+        ("Cote min S", "Cote moyenne M"),
     )
     for c0, c1 in groupes:
         _encadrer_groupe(ws, c0, c1, 1, ws.max_row)

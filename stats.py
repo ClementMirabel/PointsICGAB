@@ -171,48 +171,61 @@ def diff_classement(player):
     joueur DANS LE CLUB pour ce tableau et n'a donc rien de comparable avec
     un rang de septembre à plusieurs centaines/milliers.
 
-    - diff_points = cote actuelle - cote de septembre, diff_relatif = ce
-      diff / cote de septembre (progression relative depuis le début de
-      saison).
+    - diff_points = cote actuelle - cote de septembre. Pas de version
+      "relative" (diff / cote de septembre) : sur cette échelle, gagner 50
+      points en partant de 1000 n'est pas plus facile que gagner 50 points
+      en partant de 4000 - un même diff_points représente un effort
+      comparable quel que soit le niveau de départ, donc en faire un
+      pourcentage du niveau de départ n'a pas de sens (ça ferait paraître
+      un joueur bas niveau plus "progressif" qu'un joueur haut niveau pour
+      un progrès équivalent).
     - gain_places = rang de septembre - rang actuel : positif = a gagné des
-      places (un rang plus PETIT est meilleur, donc rang qui baisse)."""
+      places (un rang plus PETIT est meilleur, donc rang qui baisse).
+    - gain_tableau = de combien de tableaux (N1/N2/.../P12) le joueur a
+      progressé depuis septembre (positif = monté, ex: R4 -> N3 = +1)."""
     sept = player.get("Classement 1er septembre") or {}
     rang_actuel = player.get("Rang National Actuel") or {}
 
+    def _index_tableau(classement):
+        return roster.TABLEAUX.index(classement) if classement in roster.TABLEAUX else None
+
     resultat = {}
-    total_diff_points = total_sept_points = 0.0
+    total_diff_points = 0.0
     for tableau in ("Simple", "Double", "Mixte"):
         actuel_points = player["Points Actuel"][tableau]
         actuel_rang = rang_actuel.get(tableau)
+        actuel_classement = player["Classement Actuel"][tableau]
         s = sept.get(tableau)  # {"rang","classement","points"} ou None
 
-        diff_points = diff_rel = None
+        diff_points = None
         if s is not None and s.get("points") is not None:
             diff_points = actuel_points - s["points"]
-            diff_rel = (diff_points / s["points"]) if s["points"] else None
 
         gain_places = None
         if s is not None and s.get("rang") is not None and actuel_rang is not None:
             gain_places = s["rang"] - actuel_rang
 
+        gain_tableau = None
+        i_sept = _index_tableau(s.get("classement")) if s else None
+        i_actuel = _index_tableau(actuel_classement)
+        if i_sept is not None and i_actuel is not None:
+            gain_tableau = i_sept - i_actuel
+
         resultat[tableau] = {
             "septembre_classement": s.get("classement") if s else None,
             "septembre_rang": s.get("rang") if s else None,
             "septembre_points": s.get("points") if s else None,
+            "actuel_classement": actuel_classement,
             "actuel_rang": actuel_rang,
             "actuel_points": actuel_points,
             "diff_points": diff_points,
-            "diff_relatif": diff_rel,
             "gain_places": gain_places,
+            "gain_tableau": gain_tableau,
         }
         if diff_points is not None:
             total_diff_points += diff_points
-            total_sept_points += s["points"]
 
-    resultat["cumule"] = {
-        "diff_points": total_diff_points,
-        "diff_relatif": (total_diff_points / total_sept_points) if total_sept_points else None,
-    }
+    resultat["cumule"] = {"diff_points": total_diff_points}
     return resultat
 
 
@@ -284,6 +297,23 @@ def build_tournois(events_par_tableau):
     }
 
 
+def _cote_saison_stats(journal_entries):
+    """journal_entries : player["Journal cote"][tableau] (voir
+    statsJoueurs.scrape_player via results.parse_journal_complet) -> min/max/
+    moyenne de la cote observée cette saison (le journal de suivi repart à
+    zéro à chaque "Initialisation saison", donc pas besoin de filtrer par
+    date ici)."""
+    cotes = [e["cote"] for e in journal_entries if e.get("cote") is not None]
+    if not cotes:
+        return {"cote_min": None, "cote_max": None, "cote_moyenne": None, "nb_points_mesure": 0}
+    return {
+        "cote_min": min(cotes),
+        "cote_max": max(cotes),
+        "cote_moyenne": sum(cotes) / len(cotes),
+        "nb_points_mesure": len(cotes),
+    }
+
+
 def build_player_stats(player, events_par_tableau):
     """player : entrée roster (Nom/Sexe/Classement Actuel/Points Actuel),
     complétée par le "Meilleur tableau"/"Valeur IC" déjà calculés
@@ -291,6 +321,7 @@ def build_player_stats(player, events_par_tableau):
 
     Renvoie un dict prêt à être normalisé au niveau du club puis écrit dans
     l'Excel."""
+    journal = player.get("Journal cote") or {}
     par_tableau = {}
     for tableau in ("Simple", "Double", "Mixte"):
         events = events_par_tableau.get(tableau, [])
@@ -306,6 +337,7 @@ def build_player_stats(player, events_par_tableau):
             "cote": player["Points Actuel"][tableau],
             "indice_niveau_brut": niveau,
             "indice_performance_brut": indice_performance(stats),
+            "cote_saison": _cote_saison_stats(journal.get(tableau, [])),
         }
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)

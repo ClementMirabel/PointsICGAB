@@ -18,32 +18,54 @@ def _parse_date_slash(text):
     return date(int(annee), int(mois), int(jour))
 
 
-def parse_journal_cote(soup):
-    """Cote au 1er septembre (ligne 'Initialisation saison ...' du tableau
-    Journal de suivi), pour le tableau (Simple/Double/Mixte) actuellement
-    affiché. None si le bouton "Journal de suivi" n'a pas été cliqué (la
-    section est encore en mode graphique) ou si la ligne est introuvable.
-    """
+def _parse_date_iso(text):
+    """'2026-09-01' -> date(2026, 9, 1)."""
+    annee, mois, jour = text.split("-")
+    return date(int(annee), int(mois), int(jour))
+
+
+def parse_journal_complet(soup):
+    """Panel "Nombre de points / Classement" en mode tableau (bouton "Journal
+    de suivi" cliqué, data-testid='player-ranking-elo'), pour le tableau
+    (Simple/Double/Mixte) actuellement affiché -> liste de {date, points,
+    cote}, une entrée par ligne du journal (en général une par semaine où le
+    classement a bougé). [] si le bouton "Journal de suivi" n'a pas été
+    cliqué (la section est encore en mode graphique) ou si le tableau est
+    vide.
+
+    Plus fin que parse_classement_evolution (qui n'a qu'une poignée de
+    points de mesure sur toute la saison, une tous les ~2 mois environ) -
+    sert à calculer des stats (min/max/moyenne de cote) sur la saison en
+    cours plutôt que juste deux points (1er septembre et aujourd'hui)."""
     section = soup.find(attrs={"data-testid": "player-ranking-elo"})
     if section is None:
-        return None
+        return []
     table = section.find(attrs={"data-testid": "table"})
     if table is None:
-        return None
+        return []
     tbody = table.find("tbody")
     if tbody is None:
-        return None
+        return []
+
+    entries = []
     for row in tbody.find_all("tr"):
         cells = row.find_all("td")
         if len(cells) < 8:
             continue
-        commentaire = cells[5].get_text(strip=True)
-        if "Initialisation saison" in commentaire:
-            try:
-                return float(cells[7].get_text(strip=True))
-            except ValueError:
-                return None
-    return None
+        try:
+            entry_date = _parse_date_iso(cells[2].get_text(strip=True))
+        except ValueError:
+            continue
+        try:
+            points = float(cells[6].get_text(strip=True))
+        except ValueError:
+            points = None
+        try:
+            cote = float(cells[7].get_text(strip=True))
+        except ValueError:
+            cote = None
+        entries.append({"date": entry_date, "points": points, "cote": cote})
+    return entries
 
 
 def parse_classement_evolution(soup):
