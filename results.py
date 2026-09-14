@@ -150,10 +150,12 @@ def find_september_1(entries, annee):
 
 def _parse_score(score_table, mine_idx):
     """Table de score (data-testid='row-details-score') -> (sets_gagnes,
-    sets_perdus) du point de vue de mon côté (mine_idx, 0 ou 1 : PAS
-    toujours la rangée du haut, voir _side_entries), ou None si illisible.
-    Les scores non numériques (forfait...) sont ignorés set par set plutôt
-    que de faire échouer tout le match."""
+    sets_perdus, sets_detail) du point de vue de mon côté (mine_idx, 0 ou 1
+    : PAS toujours la rangée du haut, voir _side_entries), ou None si
+    illisible. sets_detail : liste de (mon_score, son_score) par set joué -
+    sert à repérer les sets serrés (voir stats, indice de clutchness). Les
+    scores non numériques (forfait...) sont ignorés set par set plutôt que
+    de faire échouer tout le match."""
     if score_table is None:
         return None
     rows = score_table.find_all("tr")
@@ -163,18 +165,20 @@ def _parse_score(score_table, mine_idx):
     mine, theirs = sides[mine_idx], sides[1 - mine_idx]
 
     sets_gagnes = sets_perdus = 0
+    sets_detail = []
     for m, t in zip(mine, theirs):
         try:
             m_val, t_val = int(m), int(t)
         except ValueError:
             continue
+        sets_detail.append((m_val, t_val))
         if m_val > t_val:
             sets_gagnes += 1
         elif t_val > m_val:
             sets_perdus += 1
     if sets_gagnes == sets_perdus:
         return None  # score incomplet/illisible : match ignoré
-    return sets_gagnes, sets_perdus
+    return sets_gagnes, sets_perdus, sets_detail
 
 
 def _side_entries(div):
@@ -217,12 +221,12 @@ def _trouve_par_nom(sides, mon_nom):
     return None
 
 
-def _side_points(div):
-    """Valeurs numériques (peuvent être négatives) d'un des deux blocs de
-    row-details-points : les points de cote gagnés/perdus sur ce match.
-    Autant de valeurs que d'entrées côté (1 en simple, 2 en double/mixte,
-    généralement identiques pour les 2 coéquipiers - même match, même
-    résultat pour les deux)."""
+def _side_valeurs(div):
+    """Valeurs numériques (peuvent être négatives) d'un des deux blocs d'une
+    cellule "par côté" (row-details-points : points de cote gagnés/perdus ;
+    row-details-rate : cote au moment du match). Autant de valeurs que
+    d'entrées côté (1 en simple, 2 en double/mixte, souvent identiques pour
+    row-details-points - même match, même résultat pour les 2 coéquipiers)."""
     valeurs = []
     for span in div.find_all("span"):
         try:
@@ -304,13 +308,27 @@ def parse_match_row(tr, mon_nom=None):
     score = _parse_score(cells[7].find(attrs={"data-testid": "row-details-score"}), mine_idx)
     if score is None:
         return None
-    sets_gagnes, sets_perdus = score
+    sets_gagnes, sets_perdus, sets_detail = score
 
     points_div = cells[3].find(attrs={"data-testid": "row-details-points"})
     points_sides = points_div.find_all("div", recursive=False) if points_div else []
-    points_valeurs = [_side_points(side) for side in points_sides]
+    points_valeurs = [_side_valeurs(side) for side in points_sides]
     points_cote = (points_valeurs[mine_idx][0]
                     if len(points_valeurs) > mine_idx and points_valeurs[mine_idx] else None)
+
+    # cote de chaque côté AU MOMENT DU MATCH (row-details-rate) - sert à
+    # repérer la meilleure victoire/pire défaite de la saison (adversaire le
+    # mieux/moins bien classé) et la force du calendrier affronté. La mienne
+    # est prise à la position me_pos (comme le nom), celle de l'adversaire
+    # est la moyenne des deux joueurs du côté adverse en double/mixte.
+    rate_div = cells[5].find(attrs={"data-testid": "row-details-rate"})
+    rate_sides = rate_div.find_all("div", recursive=False) if rate_div else []
+    rate_valeurs = [_side_valeurs(side) for side in rate_sides]
+    ma_cote = (rate_valeurs[mine_idx][me_pos]
+               if len(rate_valeurs) > mine_idx and len(rate_valeurs[mine_idx]) > me_pos else None)
+    adversaire_cote = None
+    if len(rate_valeurs) > opp_idx and rate_valeurs[opp_idx]:
+        adversaire_cote = sum(rate_valeurs[opp_idx]) / len(rate_valeurs[opp_idx])
 
     tournoi_id = None
     if len(cells) > 8:
@@ -331,8 +349,11 @@ def parse_match_row(tr, mon_nom=None):
         "noms_adverses": [n for n, _, _ in entries[opp_idx]],
         "sets_gagnes": sets_gagnes,
         "sets_perdus": sets_perdus,
+        "sets_detail": sets_detail,
         "victoire": sets_gagnes > sets_perdus,
         "points_cote": points_cote,
+        "ma_cote": ma_cote,
+        "adversaire_cote": adversaire_cote,
         "tournoi_id": tournoi_id,
     }
 

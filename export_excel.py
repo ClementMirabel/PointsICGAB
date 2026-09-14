@@ -66,7 +66,9 @@ CLASSEMENT_HEADERS = {
     "Classement actuel S", "Classement actuel D", "Classement actuel M",
 }
 TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
-                "Meilleur partenaire au club (si différent)", "Ordre tableau"} | CLASSEMENT_HEADERS
+                "Meilleur partenaire au club (si différent)", "Ordre tableau",
+                "Meilleure victoire", "Meilleure victoire (score)",
+                "Pire défaite", "Pire défaite (score)"} | CLASSEMENT_HEADERS
 
 
 def _est_colonne_delta_partenaire(header):
@@ -310,6 +312,12 @@ def _fmt_meilleur_partenaire(mp):
             round(mp["indice_performance"], 2), mp.get("points_cote_total")]
 
 
+def _fmt_fait_marquant(fm):
+    if not fm:
+        return [None, None, None]
+    return [fm["adversaire_nom"], round(fm["adversaire_cote"], 1), fm["score"]]
+
+
 def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     ws = wb.create_sheet(title)
     has_partner = tableau in ("Double", "Mixte")
@@ -335,6 +343,12 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         headers += [f"Diff cote {mois}"]
     headers += ["Matchs joués", "Victoires", "% victoire"]
     headers += ["Indice performance", "Indice niveau", "Indice qualité", "Indice global"]
+    headers += [
+        "Cote adverse moyenne",
+        "Meilleure victoire", "Meilleure victoire (cote adv)", "Meilleure victoire (score)",
+        "Pire défaite", "Pire défaite (cote adv)", "Pire défaite (score)",
+        "Sets serrés joués", "Sets serrés gagnés", "% clutch", "Diff clutch (%)",
+    ]
     if has_partner:
         headers += [
             "Matchs avec partenaire club", "% avec partenaire club",
@@ -353,6 +367,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     niveau1 += [
         ("Résultats", "Matchs joués", "% victoire"),
         ("Indices", "Indice performance", "Indice global"),
+        ("Faits marquants & clutch", "Cote adverse moyenne", "Diff clutch (%)"),
     ]
     if has_partner:
         niveau1 += [
@@ -376,6 +391,16 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         row += [entry["matchs_joues"], entry["victoires"], _pct(entry["pct_victoire"])]
         row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]),
                 _pct(entry["indice_qualite"]), _pct(entry["indice_global"])]
+        cam = entry["cote_adverse_moyenne"]
+        row += [round(cam, 1) if cam is not None else None]
+        row += _fmt_fait_marquant(entry["meilleure_victoire"])
+        row += _fmt_fait_marquant(entry["pire_defaite"])
+        clutch = entry["clutch"]
+        row += [
+            clutch["sets_serres_joues"], clutch["sets_serres_gagnes"],
+            round(clutch["taux_clutch"], 1) if clutch["taux_clutch"] is not None else None,
+            round(clutch["delta_clutch"], 1) if clutch["delta_clutch"] is not None else None,
+        ]
         if has_partner:
             p = entry["partenaire"]
             avec, sans = p["avec_partenaire_club"], p["sans_partenaire_club"]

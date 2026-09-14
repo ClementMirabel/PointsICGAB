@@ -66,6 +66,74 @@ def discipline_stats(events):
     return _agg_matchs([m for e in events for m in e["matchs"]])
 
 
+def cote_adverse_moyenne(matchs):
+    """Cote moyenne des adversaires affrontés (force du calendrier) - un
+    joueur qui croise surtout des adversaires forts peut avoir un
+    points_cote_total plus faible qu'un autre qui en croise peu, sans que
+    ça veuille dire qu'il performe moins bien à niveau d'adversaire égal."""
+    valeurs = [m["adversaire_cote"] for m in matchs if m["adversaire_cote"] is not None]
+    return sum(valeurs) / len(valeurs) if valeurs else None
+
+
+def _fait_marquant(m):
+    return {
+        "adversaire_nom": " / ".join(m["noms_adverses"]),
+        "adversaire_cote": m["adversaire_cote"],
+        "ma_cote": m["ma_cote"],
+        "score": " / ".join(f"{mon}-{son}" for mon, son in m["sets_detail"]),
+    }
+
+
+def meilleure_victoire(matchs):
+    """Parmi les matchs gagnés, celui contre l'adversaire à la cote la plus
+    haute - "l'exploit" de la saison. None si aucun match gagné avec une
+    cote adverse connue."""
+    candidats = [m for m in matchs if m["victoire"] and m["adversaire_cote"] is not None]
+    if not candidats:
+        return None
+    return _fait_marquant(max(candidats, key=lambda m: m["adversaire_cote"]))
+
+
+def pire_defaite(matchs):
+    """Parmi les matchs perdus, celui contre l'adversaire à la cote la plus
+    basse."""
+    candidats = [m for m in matchs if not m["victoire"] and m["adversaire_cote"] is not None]
+    if not candidats:
+        return None
+    return _fait_marquant(min(candidats, key=lambda m: m["adversaire_cote"]))
+
+
+SEUIL_SETS_SERRES = 3
+
+
+def indice_clutch(matchs):
+    """Le joueur performe-t-il mieux ou moins bien que sa moyenne quand le
+    set est serré (écart final <= 2 points - le seul écart possible en fin
+    de set, quelle que soit la règle en vigueur : victoire "normale" par 2
+    points, ou par 1 seul point au plafond de prolongation - 30-29 avant le
+    1er septembre 2026, 21-20 depuis le passage aux sets de 15 points) ?
+
+    delta_clutch = % de sets serrés gagnés - % de sets gagnés au global :
+    positif = monte en niveau dans les moments chauds, négatif = craque un
+    peu plus que d'habitude. None (comme taux_clutch) si moins de
+    SEUIL_SETS_SERRES sets serrés joués - trop peu pour être lisible."""
+    tous_sets = [(mon, son) for m in matchs for mon, son in m["sets_detail"]]
+    serres = [(mon, son) for mon, son in tous_sets if abs(mon - son) <= 2]
+    resultat = {
+        "sets_serres_joues": len(serres),
+        "sets_serres_gagnes": sum(1 for mon, son in serres if mon > son),
+        "taux_clutch": None,
+        "delta_clutch": None,
+    }
+    if len(serres) < SEUIL_SETS_SERRES or not tous_sets:
+        return resultat
+    taux_global = sum(1 for mon, son in tous_sets if mon > son) / len(tous_sets) * 100
+    taux_clutch = resultat["sets_serres_gagnes"] / len(serres) * 100
+    resultat["taux_clutch"] = taux_clutch
+    resultat["delta_clutch"] = taux_clutch - taux_global
+    return resultat
+
+
 def _split_partenaire(matchs):
     avec_club = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     hors_club = [m for m in matchs
@@ -433,6 +501,7 @@ def build_player_stats(player, events_par_tableau):
     par_tableau = {}
     for tableau in ("Simple", "Double", "Mixte"):
         events = events_par_tableau.get(tableau, [])
+        matchs = [m for e in events for m in e["matchs"]]
         stats = discipline_stats(events)
         classement = player["Classement Actuel"][tableau]
         points = {"Simple": 0.0, "Double": 0.0, "Mixte": 0.0}
@@ -448,6 +517,10 @@ def build_player_stats(player, events_par_tableau):
             "indice_qualite_brut": stats["points_cote_total"],
             "cote_saison": _cote_saison_stats(journal.get(tableau, [])),
             "evolution_mensuelle_cote": evolution_mensuelle_cote(journal.get(tableau, [])),
+            "cote_adverse_moyenne": cote_adverse_moyenne(matchs),
+            "meilleure_victoire": meilleure_victoire(matchs),
+            "pire_defaite": pire_defaite(matchs),
+            "clutch": indice_clutch(matchs),
         }
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)
