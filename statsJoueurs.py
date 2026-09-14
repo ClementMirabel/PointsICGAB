@@ -163,6 +163,46 @@ def click_buttons_by_text(driver, text, container_testid=None):
     return n
 
 
+def charger_tous_les_resultats(driver, container_testid="player-results", max_clics=30):
+    """Le panneau Résultats n'affiche que les ~10 événements les plus
+    récents par défaut, avec un bouton "Voir plus" qui charge un lot
+    supplémentaire à chaque clic (constaté en le cherchant en direct sur le
+    site : un joueur ayant joué près de 200 matchs dans la saison n'en
+    montrait qu'une dizaine par tableau sans ça, sans qu'aucune pagination
+    ne soit visible dans le HTML brut qu'on avait dumpé jusque-là).
+
+    On NE PEUT PAS réutiliser click_buttons_by_text ici : ce bouton porte
+    data-variant="primary", exactement comme le bouton Simple/Double/Mixte
+    actif - le filtre "pas primary" de click_buttons_by_text (pensé pour
+    ignorer le bouton de tableau déjà sélectionné) l'exclurait aussi.
+
+    Clique tant que le bouton est présent, pas désactivé, ET que le clic
+    précédent a effectivement ajouté des lignes (garde-fou contre un bouton
+    qui resterait dans le DOM sans plus rien charger)."""
+    selector = f"div[data-testid='{container_testid}'] button[data-testid='button']"
+    lignes_selector = f"div[data-testid='{container_testid}'] tbody > tr"
+    avant = len(driver.find_elements(By.CSS_SELECTOR, lignes_selector))
+    for _ in range(max_clics):
+        target = None
+        for btn in driver.find_elements(By.CSS_SELECTOR, selector):
+            label = (btn.get_attribute("textContent") or "").strip()
+            if label == "Voir plus" and not btn.get_attribute("disabled"):
+                target = btn
+                break
+        if target is None:
+            return
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target)
+            click(driver, target)
+        except Exception as e:
+            print(f"  clic 'Voir plus' : {e}")
+            return
+        apres = len(driver.find_elements(By.CSS_SELECTOR, lignes_selector))
+        if apres <= avant:
+            return  # le clic n'a rien chargé de plus : on s'arrête là
+        avant = apres
+
+
 def dump_html(driver, licence, suffix):
     os.makedirs(DEBUG_DIR, exist_ok=True)
     path = os.path.join(DEBUG_DIR, f"joueur_{licence}_{suffix}.html")
@@ -291,15 +331,19 @@ def scrape_player(driver, player):
     # points/Classement, Ratio victoires/défaites et Progression ne sont
     # plus utilisés depuis le passage à la page classement-historique)
     expand_section_by_text(driver, "Résultats")
+    charger_tous_les_resultats(driver)
     events = {"Simple": _parse_results_with_retry(driver, player["Nom"])}
 
     # limité à player-results : les autres groupes Simple/Double/Mixte de
     # la page (Nombre de points/Classement, Progression) n'ont plus besoin
-    # d'être basculés
+    # d'être basculés. Chaque bascule de tableau repart avec seulement les
+    # ~10 événements les plus récents - il faut recliquer "Voir plus".
     click_buttons_by_text(driver, "Double", container_testid="player-results")
+    charger_tous_les_resultats(driver)
     events["Double"] = _parse_results_with_retry(driver, player["Nom"])
 
     click_buttons_by_text(driver, "Mixte", container_testid="player-results")
+    charger_tous_les_resultats(driver)
     events["Mixte"] = _parse_results_with_retry(driver, player["Nom"])
 
     driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
