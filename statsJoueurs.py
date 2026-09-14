@@ -261,6 +261,17 @@ def _current_season_start_year(today=None):
     return today.year if today.month >= 9 else today.year - 1
 
 
+def _filtrer_saison_courante(events):
+    """Ne garde que les événements datés à partir du 1er septembre de la
+    saison en cours. Filet de sécurité : le panneau Résultats est censé ne
+    montrer que la saison en cours (les résultats plus anciens devraient
+    être uniquement dans l'historique de classement), mais un bug côté site
+    peut laisser passer des résultats de la saison précédente - on filtre
+    nous-même plutôt que de faire confiance au site sur ce point."""
+    debut_saison = date(_current_season_start_year(), 9, 1)
+    return [e for e in events if stats.parse_date_fr(e["date"]) >= debut_saison]
+
+
 def _stabilise(lire, taille, tentatives=6, pause=0.5):
     """Interroge `lire()` (une capture de l'état actuel du DOM) plusieurs
     fois de suite jusqu'à ce que deux lectures consécutives donnent la même
@@ -439,6 +450,7 @@ def scrape_player(driver, player):
         if bloc.get("points") is not None:
             player["Points Actuel"][tableau] = bloc["points"]
 
+    events = {tableau: _filtrer_saison_courante(es) for tableau, es in events.items()}
     return events
 
 
