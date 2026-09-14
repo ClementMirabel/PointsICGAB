@@ -322,6 +322,23 @@ def _parse_journal_with_retry(driver, tentatives=6, pause=0.5):
         tentatives, pause)
 
 
+class JoueurPrive(Exception):
+    """Le joueur a rendu ses résultats privés (RGPD) : /joueur/<licence>
+    redirige vers /recherche/joueur au lieu de charger sa page. Cas normal
+    et attendu, à distinguer d'un timeout réseau ou d'une vraie erreur de
+    scraping - inutile de gaspiller des tentatives dessus."""
+
+
+def _page_joueur_privee(driver):
+    """True si la page a redirigé vers la recherche au lieu de charger la
+    page joueur - constaté : /joueur/<licence> d'un joueur privé renvoie
+    vers /recherche/joueur avec le message "Veuillez spécifier votre
+    recherche" (data-testid='no-result')."""
+    if "/recherche/joueur" in driver.current_url:
+        return True
+    return bool(driver.find_elements(By.CSS_SELECTOR, "[data-testid='no-result']"))
+
+
 def _charger_page_joueur(driver, url, tentatives=3, pause=2):
     """Navigue vers `url` (une page /joueur/...) et attend qu'elle soit
     chargée, en retentant (nouvelle navigation complète, pas juste une
@@ -329,9 +346,16 @@ def _charger_page_joueur(driver, url, tentatives=3, pause=2):
     intermittents ("server busy" côté site, rien à voir avec le joueur)
     faisaient perdre silencieusement des joueurs qui ont pourtant de vrais
     résultats, sans aucune retentative (on continuait sur une page pas
-    forcément chargée). Renvoie True si la page a fini par charger."""
+    forcément chargée).
+
+    Lève JoueurPrive dès qu'une redirection vers la recherche est détectée
+    (voir _page_joueur_privee) - vérifié à la première tentative pour ne
+    pas gaspiller tout le budget de retentatives à re-timeout dessus (la
+    page de recherche, elle, charge très bien - ce n'est pas un timeout)."""
     for tentative in range(tentatives):
         driver.get(url)
+        if _page_joueur_privee(driver):
+            raise JoueurPrive
         try:
             WebDriverWait(driver, 15).until(EC.presence_of_element_located(
                 (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
@@ -350,7 +374,8 @@ def scrape_player(driver, player):
     au 1er septembre (page classement-historique, panel "Évolution
     classement" - identique quel que soit l'état des boutons Simple/Double/
     Mixte). Complète player["Classement 1er septembre"]/["Journal cote"] et
-    renvoie events_par_tableau (voir stats.build_tournois)."""
+    renvoie events_par_tableau (voir stats.build_tournois). Lève JoueurPrive
+    si le joueur a rendu ses résultats privés."""
     _charger_page_joueur(driver, f"https://myffbad.fr/joueur/{player['Licence']}")
 
     # panneau "Résultats" (Ratio victoires/défaites et Progression ne sont
@@ -417,15 +442,54 @@ def scrape_player(driver, player):
     return events
 
 
-def scrape_all(driver, players):
+def _nb_matchs(events):
+    return sum(len(e["matchs"]) for es in events.values() for e in es)
+
+
+def scrape_all(driver, players, tentatives_si_vide=2):
+    """Scrape tout le monde, avec un log par joueur exploitable dans les
+    logs GitHub Actions (statut entre crochets - facile à repérer/grep) et
+    un résumé en fin de run.
+
+    Un joueur "accessible" (page chargée) mais 0 match récupéré est
+    RETENTÉ en entier (nouvelle navigation + nouveau scrape complet, pas
+    juste une relecture du DOM déjà chargé - voir _stabilise pour ce
+    niveau-là, déjà en place) jusqu'à `tentatives_si_vide` fois avant
+    d'accepter : constaté que des joueurs ayant pourtant de vrais résultats
+    ressortaient encore vides malgré les filets de sécurité existants."""
     all_stats = []
+    compteurs = {"ok": 0, "vide": 0, "prive": 0, "erreur": 0}
     for i, player in enumerate(players, 1):
         print(f"[{i}/{len(players)}] {player['Nom']}...")
         try:
-            events = scrape_player(driver, player)
+            events = None
+            for tentative in range(tentatives_si_vide):
+                events = scrape_player(driver, player)
+                if _nb_matchs(events) > 0:
+                    break
+                if tentative < tentatives_si_vide - 1:
+                    print(f"  [VIDE] 0 match récupéré, nouvelle tentative complète "
+                          f"({tentative + 2}/{tentatives_si_vide})...")
+
+            nb = _nb_matchs(events)
             all_stats.append(stats.build_player_stats(player, events))
+            if nb > 0:
+                print(f"  [OK] {nb} match(s)")
+                compteurs["ok"] += 1
+            else:
+                print(f"  [VIDE] {player['Nom']} (licence {player['Licence']}) : 0 match après "
+                      f"{tentatives_si_vide} tentative(s) - à vérifier manuellement : "
+                      f"https://myffbad.fr/joueur/{player['Licence']}")
+                compteurs["vide"] += 1
+        except JoueurPrive:
+            print(f"  [PRIVÉ] {player['Nom']} : résultats non publics, ignoré.")
+            compteurs["prive"] += 1
         except Exception as e:
-            print(f"  erreur, joueur ignoré : {e}")
+            print(f"  [ERREUR] {player['Nom']} (licence {player['Licence']}) : {e}")
+            compteurs["erreur"] += 1
+
+    print(f"\nRésumé scraping : {compteurs['ok']} OK, {compteurs['vide']} vide(s) après retry, "
+          f"{compteurs['prive']} privé(s), {compteurs['erreur']} erreur(s) sur {len(players)} joueur(s).")
     return all_stats
 
 
