@@ -165,13 +165,19 @@ def meilleur_partenaire_club_si_different(overall, club):
 
 
 def ordre_disciplines(par_tableau):
-    """Les 3 tableaux (Simple/Double/Mixte) triés du plus fort au moins
-    fort pour ce joueur, selon l'indice de performance BRUT de chacun (pas
-    la version normalisée club-wide, qui compare des échelles différentes
-    par tableau - ici on compare les 3 tableaux d'un même joueur entre
-    eux, la valeur brute est directement comparable pour ça)."""
+    """Les 3 tableaux (Simple/Double/Mixte) triés du plus fort au moins fort
+    pour ce joueur, selon indice_global (déjà normalisé club-wide, voir
+    normaliser_club - il faut donc appeler cette fonction APRÈS
+    normaliser_club, pas depuis build_player_stats).
+
+    indice_global et pas indice_performance_brut (l'ancienne version) :
+    c'est le même indice composite utilisé pour classer/trier les joueurs
+    partout ailleurs dans le classeur - sinon "Ordre tableau" pouvait
+    afficher un ordre qui contredisait l'indice global affiché juste à
+    côté (ex: le tableau avec l'indice global le plus haut du joueur pas
+    en tête de son propre "Ordre tableau")."""
     tableaux = ("Simple", "Double", "Mixte")
-    return sorted(tableaux, key=lambda t: -par_tableau[t]["indice_performance_brut"])
+    return sorted(tableaux, key=lambda t: -par_tableau[t]["indice_global"])
 
 
 def diff_classement(player):
@@ -484,7 +490,9 @@ def build_player_stats(player, events_par_tableau):
         "partenaire_double_mixte": partenaire_double_mixte,
         "meilleur_partenaire_double_mixte": meilleur_partenaire_dm,
         "meilleur_partenaire_double_mixte_club": meilleur_partenaire_dm_club,
-        "ordre_disciplines": ordre_disciplines(par_tableau),
+        # "ordre_disciplines" pas rempli ici : ordre_disciplines() se base
+        # sur indice_global, qui n'existe qu'après normaliser_club (voir
+        # plus bas) - rempli par normaliser_club, pas par build_player_stats.
         "progression": diff_classement(player),
         "global": {
             **stats_globales,
@@ -517,6 +525,11 @@ def normaliser_club(all_stats):
         for entry in entries:
             entry["indice_global"] = indice_global(
                 entry["indice_performance"], entry["indice_niveau"], entry["indice_qualite"])
+
+    # les 3 indice_global par tableau sont prêts : c'est seulement
+    # maintenant qu'on peut classer les 3 tableaux d'un joueur entre eux.
+    for s in all_stats:
+        s["ordre_disciplines"] = ordre_disciplines(s["par_tableau"])
 
     globaux = [s["global"] for s in all_stats]
     bornes["Global - performance"] = normaliser(globaux, "indice_performance_brut", "indice_performance")
