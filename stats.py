@@ -206,6 +206,35 @@ def sets_extremes(matchs):
     }
 
 
+def dynamique_match(matchs):
+    """Comment tourne un match selon ce qui s'est passé au 1er set (matchs à
+    au moins 2 sets, forfaits exclus - voir _est_forfait, leur schéma de
+    sets ne dit rien d'une vraie dynamique de match) :
+    - taux_propre : parmi les matchs GAGNÉS, % gagnés "propre" (tous les
+      sets remportés, sans en concéder un) plutôt qu'accrochés à 3 sets.
+    - taux_apres_premier_set : parmi les matchs où le 1er set est gagné, %
+      de matchs remportés au final - "ferme-t-on derrière" ?
+    - taux_comeback : parmi les matchs où le 1er set est PERDU, % de
+      matchs gagnés quand même - capacité à revenir de 0-1."""
+    matchs_utiles = [m for m in matchs if len(m["sets_detail"]) >= 2 and not _est_forfait(m)]
+    gagnes = [m for m in matchs_utiles if m["victoire"]]
+    propres = [m for m in gagnes if all(mon > son for mon, son in m["sets_detail"])]
+    premier_gagne = [m for m in matchs_utiles if m["sets_detail"][0][0] > m["sets_detail"][0][1]]
+    premier_perdu = [m for m in matchs_utiles if m["sets_detail"][0][1] > m["sets_detail"][0][0]]
+
+    return {
+        "nb_gagnes": len(gagnes),
+        "nb_propres": len(propres),
+        "taux_propre": (len(propres) / len(gagnes) * 100) if gagnes else None,
+        "nb_premier_set_gagne": len(premier_gagne),
+        "taux_apres_premier_set": (sum(1 for m in premier_gagne if m["victoire"]) / len(premier_gagne) * 100)
+                                   if premier_gagne else None,
+        "nb_premier_set_perdu": len(premier_perdu),
+        "taux_comeback": (sum(1 for m in premier_perdu if m["victoire"]) / len(premier_perdu) * 100)
+                          if premier_perdu else None,
+    }
+
+
 def _split_partenaire(matchs):
     avec_club = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     hors_club = [m for m in matchs
@@ -595,6 +624,7 @@ def build_player_stats(player, events_par_tableau):
             "clutch": indice_clutch(matchs),
             "profil_score": profil_score(matchs),
             "sets_extremes": sets_extremes(matchs),
+            "dynamique": dynamique_match(matchs),
         }
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)

@@ -868,6 +868,28 @@ def _write_club_sheet(wb, all_stats):
     pc_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, pc_headers, pc_first_row, pc_last_row)
 
+    # --- dynamique de match club-wide, par catégorie ---
+    ws.append([])
+    ws.append(["Dynamique de match, par catégorie"])
+    dy_header_row = ws.max_row + 1
+    dy_headers = ["Catégorie", "Matchs gagnés", "Taux propre (%)",
+                  "1er set gagné", "Taux après 1er set gagné (%)",
+                  "1er set perdu", "Taux comeback (%)"]
+    ws.append(dy_headers)
+    dy_first_row = ws.max_row + 1
+
+    for cat in toutes_categories:
+        d = stats.dynamique_match(matchs_par_categorie.get(cat, []))
+        ws.append([
+            cat, d["nb_gagnes"], round(d["taux_propre"], 1) if d["taux_propre"] is not None else None,
+            d["nb_premier_set_gagne"],
+            round(d["taux_apres_premier_set"], 1) if d["taux_apres_premier_set"] is not None else None,
+            d["nb_premier_set_perdu"],
+            round(d["taux_comeback"], 1) if d["taux_comeback"] is not None else None,
+        ])
+    dy_last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, dy_headers, dy_first_row, dy_last_row)
+
     # --- clutchness club-wide, par catégorie ---
     ws.append([])
     ws.append(["Clutchness club (sets à 2 points d'écart ou moins)"])
@@ -896,7 +918,8 @@ def _write_club_sheet(wb, all_stats):
 # profil_score / stats.sets_extremes.
 _METRIQUES_SCORE = ["Score moyen (moi)", "Score moyen (adversaire)", "Score max infligé", "Score max reçu",
                      "Points moyens (victoire)", "Points moyens (défaite)",
-                     "Sets extrêmes joués", "Sets extrêmes gagnés"]
+                     "Sets extrêmes joués", "Sets extrêmes gagnés",
+                     "Taux propre (%)", "Taux après 1er set gagné (%)", "Taux comeback (%)"]
 _SUFFIXE_TABLEAU = {"Simple": "S", "Double": "D", "Mixte": "M"}
 
 
@@ -922,7 +945,7 @@ def _write_stats_avancees_sheet(wb, all_stats):
         row = [s["Nom"], s["Sexe"]]
         for tableau in ("Simple", "Double", "Mixte"):
             entry = s["par_tableau"][tableau]
-            ps, se = entry["profil_score"], entry["sets_extremes"]
+            ps, se, dy = entry["profil_score"], entry["sets_extremes"], entry["dynamique"]
             row += [
                 round(ps["score_moyen_mien"], 1) if ps["score_moyen_mien"] is not None else None,
                 round(ps["score_moyen_adverse"], 1) if ps["score_moyen_adverse"] is not None else None,
@@ -932,6 +955,9 @@ def _write_stats_avancees_sheet(wb, all_stats):
                 round(ps["points_moyens_defaite"], 1) if ps["points_moyens_defaite"] is not None else None,
                 se["nb_joues"],
                 se["nb_gagnes"],
+                round(dy["taux_propre"], 1) if dy["taux_propre"] is not None else None,
+                round(dy["taux_apres_premier_set"], 1) if dy["taux_apres_premier_set"] is not None else None,
+                round(dy["taux_comeback"], 1) if dy["taux_comeback"] is not None else None,
             ]
         ws.append(row)
 
