@@ -72,7 +72,9 @@ TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Catégorie", "Meilleur partenaire", "Mei
                 "Meilleure victoire", "Meilleure victoire (score)",
                 "Pire défaite", "Pire défaite (score)",
                 "Score max infligé S", "Score max infligé D", "Score max infligé M",
-                "Score max reçu S", "Score max reçu D", "Score max reçu M"} | CLASSEMENT_HEADERS
+                "Score max reçu S", "Score max reçu D", "Score max reçu M",
+                "Résultat", "Tournoi", "Joueur A", "Joueur B", "Type", "Joueur",
+                "Tableau"} | CLASSEMENT_HEADERS
 
 
 def _est_colonne_delta_partenaire(header):
@@ -923,6 +925,91 @@ _METRIQUES_SCORE = ["Score moyen (moi)", "Score moyen (adversaire)", "Score max 
 _SUFFIXE_TABLEAU = {"Simple": "S", "Double": "D", "Mixte": "M"}
 
 
+def _tournois_participation(all_stats, min_joueurs=5):
+    """Pour chaque tournoi individuel (date + nom d'événement, hors
+    interclubs et hors matchs intra-club - qui ne disent rien de la
+    performance face à l'extérieur), les joueurs du club engagés et leur
+    bilan agrégé. Renvoie (meilleur, pire) - les deux tournois au % de
+    victoire le plus haut/bas, parmi ceux avec au moins `min_joueurs`
+    joueurs du club engagés (sinon trop peu pour être significatif). (None,
+    None) si aucun tournoi n'atteint ce seuil."""
+    par_tournoi = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0})
+    for s in all_stats:
+        for m in s["match_log"]:
+            if m["est_interclub"] or m["intra_club"]:
+                continue
+            b = par_tournoi[(m["date"], m["evenement"])]
+            b["joueurs"].add(s["Nom"])
+            b["joues"] += 1
+            b["victoires"] += 1 if m["victoire"] else 0
+
+    candidats = []
+    for (date_t, nom_t), b in par_tournoi.items():
+        if len(b["joueurs"]) < min_joueurs:
+            continue
+        pct = b["victoires"] / b["joues"] * 100 if b["joues"] else 0.0
+        candidats.append({
+            "nom": nom_t, "date": date_t, "joueurs": len(b["joueurs"]),
+            "matchs": b["joues"], "victoires": b["victoires"], "pct": pct,
+        })
+    if not candidats:
+        return None, None
+    return max(candidats, key=lambda c: c["pct"]), min(candidats, key=lambda c: c["pct"])
+
+
+def _rivalites_simple(all_stats):
+    """Pour chaque paire de joueurs du club qui se sont affrontés en Simple
+    (matchs intra-club), nombre de confrontations et qui mène - les
+    rivalités les plus disputées de la saison, triées par nombre de
+    confrontations décroissant. Limité au Simple : en double/mixte, une
+    "rivalité" opposerait deux PAIRES (4 personnes), pas 2 joueurs - une
+    tout autre question."""
+    par_paire = defaultdict(lambda: {"total": 0, "victoires": defaultdict(int)})
+    for s in all_stats:
+        for m in s["match_log"]:
+            if m["tableau"] != "Simple" or not m["intra_club"]:
+                continue
+            adversaire = " / ".join(m["noms_adverses"])
+            if not adversaire or s["Nom"] >= adversaire:
+                continue  # évite de compter 2 fois la même rencontre (vue des 2 côtés)
+            b = par_paire[(s["Nom"], adversaire)]
+            b["total"] += 1
+            b["victoires"][s["Nom"] if m["victoire"] else adversaire] += 1
+
+    resultat = [
+        {
+            "joueur_a": a, "joueur_b": b_nom, "total": b["total"],
+            "victoires_a": b["victoires"].get(a, 0), "victoires_b": b["victoires"].get(b_nom, 0),
+        }
+        for (a, b_nom), b in par_paire.items()
+    ]
+    resultat.sort(key=lambda r: -r["total"])
+    return resultat
+
+
+def _pics_mensuels(all_stats):
+    """Pour chaque tableau et chaque genre, le plus gros gain et la plus
+    grosse perte de cote sur un seul mois (voir stats.
+    evolution_mensuelle_cote) - le joueur, le mois, le delta."""
+    resultat = []
+    for tableau in ("Simple", "Double", "Mixte"):
+        for sexe in ("H", "F"):
+            candidats = [
+                (s["Nom"], mois, delta)
+                for s in all_stats if s["Sexe"] == sexe
+                for mois, delta in s["par_tableau"][tableau]["evolution_mensuelle_cote"].items()
+            ]
+            if not candidats:
+                continue
+            pic = max(candidats, key=lambda c: c[2])
+            chute = min(candidats, key=lambda c: c[2])
+            resultat.append({"tableau": tableau, "sexe": sexe, "type": "Pic",
+                              "nom": pic[0], "mois": pic[1], "delta": pic[2]})
+            resultat.append({"tableau": tableau, "sexe": sexe, "type": "Chute",
+                              "nom": chute[0], "mois": chute[1], "delta": chute[2]})
+    return resultat
+
+
 def _write_stats_avancees_sheet(wb, all_stats):
     ws = wb.create_sheet("Stats avancées")
 
@@ -1000,6 +1087,49 @@ def _write_stats_avancees_sheet(wb, all_stats):
         pie.add_data(data)
         pie.set_categories(labels)
         ws.add_chart(pie, f"D{resume_header_row}")
+
+    # --- tournoi le plus / le moins victorieux (min. 5 joueurs engagés) ---
+    ws.append([])
+    ws.append(["Tournoi le plus / le moins victorieux (au moins 5 joueurs du club engagés)"])
+    tournoi_header_row = ws.max_row + 1
+    tournoi_headers = ["Résultat", "Tournoi", "Joueurs engagés", "Matchs", "Victoires", "% victoire"]
+    ws.append(tournoi_headers)
+    tournoi_first_row = ws.max_row + 1
+    meilleur, pire = _tournois_participation(all_stats)
+    for label, t in (("Meilleur", meilleur), ("Pire", pire)):
+        if t is None:
+            ws.append([label, "Aucun tournoi n'atteint le seuil de 5 joueurs", None, None, None, None])
+        else:
+            ws.append([label, t["nom"], t["joueurs"], t["matchs"], t["victoires"], round(t["pct"], 1)])
+    tournoi_last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, tournoi_headers, tournoi_first_row, tournoi_last_row)
+
+    # --- rivalités entre joueurs du club, en Simple ---
+    ws.append([])
+    ws.append(["Rivalités entre joueurs du club (Simple, matchs intra-club)"])
+    riv_header_row = ws.max_row + 1
+    riv_headers = ["Joueur A", "Joueur B", "Confrontations", "Victoires A", "Victoires B"]
+    ws.append(riv_headers)
+    riv_first_row = ws.max_row + 1
+    rivalites = _rivalites_simple(all_stats)
+    for r in rivalites:
+        ws.append([r["joueur_a"], r["joueur_b"], r["total"], r["victoires_a"], r["victoires_b"]])
+    riv_last_row = ws.max_row
+    if riv_last_row >= riv_first_row:
+        _appliquer_mise_en_forme(ws, riv_headers, riv_first_row, riv_last_row)
+
+    # --- plus gros pics/chutes de cote sur un mois, par tableau et genre ---
+    ws.append([])
+    ws.append(["Plus gros pics/chutes de cote sur un mois, par tableau et par genre"])
+    pic_header_row = ws.max_row + 1
+    pic_headers = ["Tableau", "Sexe", "Type", "Joueur", "Mois", "Delta cote"]
+    ws.append(pic_headers)
+    pic_first_row = ws.max_row + 1
+    for p in _pics_mensuels(all_stats):
+        ws.append([p["tableau"], p["sexe"], p["type"], p["nom"], p["mois"], round(p["delta"], 1)])
+    pic_last_row = ws.max_row
+    if pic_last_row >= pic_first_row:
+        _appliquer_mise_en_forme(ws, pic_headers, pic_first_row, pic_last_row)
 
     return ws
 

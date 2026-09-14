@@ -649,24 +649,33 @@ def build_player_stats(player, events_par_tableau):
 
     tournois = build_tournois(events_par_tableau)
 
-    # un enregistrement par match (tableau, mois, victoire, sets_detail,
-    # est_interclub, intra_club), pour la ventilation mensuelle et le
-    # clutch club-wide (onglet Stats club) - inutile de stocker le sexe
-    # ici, on l'a déjà au niveau du joueur. sets_detail permet de rappeler
-    # indice_clutch() club-wide sans ré-analyser tous les matchs bruts (voir
-    # export_excel._write_club_sheet). intra_club = adversaire(s) 100% du
+    # un enregistrement par match (tableau, mois, date, evenement, victoire,
+    # sets_detail, est_interclub, intra_club, points_cote, noms_adverses),
+    # pour la ventilation club-wide (onglet Stats club) et les stats
+    # "avancées" - inutile de stocker le sexe/nom ici, on les a déjà au
+    # niveau du joueur (voir all_stats côté export_excel). sets_detail
+    # permet de rappeler indice_clutch()/dynamique_match() club-wide sans
+    # ré-analyser tous les matchs bruts. intra_club = adversaire(s) 100% du
     # club (GAB38 vs GAB38, un joueur du club contre un autre en tournoi
     # individuel) - toujours 1 victoire + 1 défaite pour le club, dilue le %
-    # club vers 50% sans rien dire de sa performance face à l'extérieur.
+    # club vers 50% sans rien dire de sa performance face à l'extérieur (mais
+    # sert justement à repérer les rivalités internes). evenement + date
+    # identifient un tournoi (hors interclubs, où evenement se répète sur
+    # toute la saison pour des rencontres différentes - date seule suffit à
+    # les distinguer, mais pas les tournois individuels : deux tournois
+    # différents pourraient tomber le même jour).
     match_log = [
         {
             "tableau": tableau,
             "mois": parse_date_fr(e["date"]).strftime("%Y-%m"),
+            "date": parse_date_fr(e["date"]),
+            "evenement": e["evenement"],
             "victoire": m["victoire"],
             "sets_detail": m["sets_detail"],
             "est_interclub": e["est_interclub"],
             "intra_club": bool(m["clubs_adverses"]) and all(c == results.MY_CLUB for c in m["clubs_adverses"]),
             "points_cote": m["points_cote"],
+            "noms_adverses": m["noms_adverses"],
         }
         for tableau, events in events_par_tableau.items()
         for e in events
