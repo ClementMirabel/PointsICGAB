@@ -322,6 +322,28 @@ def _parse_journal_with_retry(driver, tentatives=6, pause=0.5):
         tentatives, pause)
 
 
+def _charger_page_joueur(driver, url, tentatives=3, pause=2):
+    """Navigue vers `url` (une page /joueur/...) et attend qu'elle soit
+    chargée, en retentant (nouvelle navigation complète, pas juste une
+    attente plus longue) en cas de timeout - constaté : des échecs
+    intermittents ("server busy" côté site, rien à voir avec le joueur)
+    faisaient perdre silencieusement des joueurs qui ont pourtant de vrais
+    résultats, sans aucune retentative (on continuait sur une page pas
+    forcément chargée). Renvoie True si la page a fini par charger."""
+    for tentative in range(tentatives):
+        driver.get(url)
+        try:
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
+            return True
+        except TimeoutException:
+            if tentative < tentatives - 1:
+                print(f"  chargement trop long, nouvelle tentative ({tentative + 2}/{tentatives})...")
+                time.sleep(pause)
+    print("  chargement trop long après plusieurs tentatives, on continue quand même.")
+    return False
+
+
 def scrape_player(driver, player):
     """Scrape la page d'un joueur du roster : résultats des 3 tableaux et
     journal de suivi de la cote (page principale) + classement/place/points
@@ -329,12 +351,7 @@ def scrape_player(driver, player):
     classement" - identique quel que soit l'état des boutons Simple/Double/
     Mixte). Complète player["Classement 1er septembre"]/["Journal cote"] et
     renvoie events_par_tableau (voir stats.build_tournois)."""
-    driver.get(f"https://myffbad.fr/joueur/{player['Licence']}")
-    try:
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
-    except TimeoutException:
-        print("  chargement trop long, on continue quand même.")
+    _charger_page_joueur(driver, f"https://myffbad.fr/joueur/{player['Licence']}")
 
     # panneau "Résultats" (Ratio victoires/défaites et Progression ne sont
     # plus utilisés depuis le passage à la page classement-historique)
@@ -374,12 +391,7 @@ def scrape_player(driver, player):
     journal["Mixte"] = _parse_journal_with_retry(driver)
     player["Journal cote"] = journal
 
-    driver.get(f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
-    try:
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, "section[data-testid='player-layout']")))
-    except TimeoutException:
-        print("  chargement trop long (classement-historique), on continue quand même.")
+    _charger_page_joueur(driver, f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
     expand_section_by_text(driver, "Évolution classement")
     evolution = _parse_evolution_with_retry(driver)
     player["Classement 1er septembre"] = results.find_september_1(evolution, _current_season_start_year())
