@@ -10,6 +10,8 @@ from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+import stats
+
 DISCIPLINE_SHEETS = [
     # (titre, tableau, sexe ou None si le tableau n'est pas séparé par genre)
     ("SH", "Simple", "H"),
@@ -65,7 +67,7 @@ CLASSEMENT_HEADERS = {
     "Classement sept. S", "Classement sept. D", "Classement sept. M",
     "Classement actuel S", "Classement actuel D", "Classement actuel M",
 }
-TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Meilleur partenaire", "Meilleur partenaire (D+M)",
+TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Catégorie", "Meilleur partenaire", "Meilleur partenaire (D+M)",
                 "Meilleur partenaire au club (si différent)", "Ordre tableau",
                 "Meilleure victoire", "Meilleure victoire (score)",
                 "Pire défaite", "Pire défaite (score)"} | CLASSEMENT_HEADERS
@@ -709,23 +711,32 @@ def _write_club_sheet(wb, all_stats):
     ws = wb.create_sheet("Stats club")
 
     par_mois = defaultdict(lambda: {cat: {"joues": 0, "victoires": 0} for cat in CLUB_CATEGORIES})
+    # accumule aussi les matchs bruts par catégorie (pas juste les compteurs
+    # matchs/victoires) pour pouvoir rappeler stats.indice_clutch() club-wide
+    # ci-dessous - une même partie compte dans plusieurs catégories qui se
+    # chevauchent (ex: DH compte aussi dans "H (tous tableaux)"), comme pour
+    # les compteurs matchs/victoires juste au-dessus.
+    matchs_par_categorie = defaultdict(list)
+    tous_les_matchs = []
 
-    def _add(mois, cat, victoire):
+    def _add(mois, cat, m):
         b = par_mois[mois][cat]
         b["joues"] += 1
-        b["victoires"] += 1 if victoire else 0
+        b["victoires"] += 1 if m["victoire"] else 0
+        matchs_par_categorie[cat].append(m)
 
     for s in all_stats:
         sexe = s["Sexe"]
         genre_total = "H (tous tableaux)" if sexe == "H" else "F (tous tableaux)"
         for m in s["match_log"]:
-            tableau, mois, victoire = m["tableau"], m["mois"], m["victoire"]
-            _add(mois, genre_total, victoire)
+            tableau, mois = m["tableau"], m["mois"]
+            tous_les_matchs.append(m)
+            _add(mois, genre_total, m)
             if tableau == "Mixte":
-                _add(mois, "MX", victoire)
+                _add(mois, "MX", m)
             else:
-                _add(mois, tableau[0] + _GENRE_CODE[sexe], victoire)  # SH/SD/DH/DD
-                _add(mois, f"{tableau[0]} (unisexe)", victoire)  # S/D (unisexe)
+                _add(mois, tableau[0] + _GENRE_CODE[sexe], m)  # SH/SD/DH/DD
+                _add(mois, f"{tableau[0]} (unisexe)", m)  # S/D (unisexe)
 
     header = ["Mois"]
     for cat in CLUB_CATEGORIES:
@@ -775,6 +786,25 @@ def _write_club_sheet(wb, all_stats):
 
         bar += line
         ws.add_chart(bar, f"B{last_row + 3}")
+
+    # --- clutchness club-wide, par catégorie ---
+    ws.append([])
+    ws.append(["Clutchness club (sets à 2 points d'écart ou moins)"])
+    clutch_header_row = ws.max_row + 1
+    clutch_headers = ["Catégorie", "Sets serrés joués", "Sets serrés gagnés", "% clutch", "Diff clutch (%)"]
+    ws.append(clutch_headers)
+    clutch_first_row = ws.max_row + 1
+
+    matchs_par_categorie["Club (tous tableaux)"] = tous_les_matchs
+    for cat in CLUB_CATEGORIES + ["Club (tous tableaux)"]:
+        c = stats.indice_clutch(matchs_par_categorie.get(cat, []))
+        ws.append([
+            cat, c["sets_serres_joues"], c["sets_serres_gagnes"],
+            round(c["taux_clutch"], 1) if c["taux_clutch"] is not None else None,
+            round(c["delta_clutch"], 1) if c["delta_clutch"] is not None else None,
+        ])
+    clutch_last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, clutch_headers, clutch_first_row, clutch_last_row)
 
     return ws
 
