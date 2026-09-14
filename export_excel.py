@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 import openpyxl
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
-from openpyxl.styles import Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 DISCIPLINE_SHEETS = [
@@ -36,11 +36,27 @@ FILL_D = _uni("FF27AE60")  # vert
 FONT_BLANC = Font(color="FFFFFFFF")
 FONT_ROUGE = Font(color="FFE74C3C")
 
-FILL_SIMPLE = _uni("FFD5E8D4")
-FILL_DOUBLE = _uni("FFDAE8FC")
-FILL_MIXTE = _uni("FFFFE6CC")
+# ordre tableau : une couleur par combinaison (pas juste par discipline en
+# tête) - même famille de teinte selon la discipline en tête (vert=Simple,
+# bleu=Double, orange=Mixte), une nuance plus soutenue pour la 2e place.
+FILL_S_D = _uni("FFD5E8D4")  # Simple > Double > Mixte
+FILL_S_M = _uni("FFA9D18E")  # Simple > Mixte > Double
+FILL_D_S = _uni("FFDAE8FC")  # Double > Simple > Mixte
+FILL_D_M = _uni("FF9DC3E6")  # Double > Mixte > Simple
+FILL_M_S = _uni("FFFFE6CC")  # Mixte > Simple > Double
+FILL_M_D = _uni("FFF4B183")  # Mixte > Double > Simple
+
+ORDRE_TABLEAU_COULEURS = {
+    "Simple > Double > Mixte": FILL_S_D,
+    "Simple > Mixte > Double": FILL_S_M,
+    "Double > Simple > Mixte": FILL_D_S,
+    "Double > Mixte > Simple": FILL_D_M,
+    "Mixte > Simple > Double": FILL_M_S,
+    "Mixte > Double > Simple": FILL_M_D,
+}
 
 BORDURE_GROUPE = Side(style="thick", color="FF999999")
+BORDURE_LEGERE = Side(style="thin", color="FFCCCCCC")
 
 # colonnes texte qu'on ne colore pas en dégradé (déjà colorées autrement,
 # ou pas un indicateur de performance)
@@ -85,15 +101,15 @@ def _colorer_classement(ws, col_idx, first_row, last_row):
 
 
 def _colorer_ordre_tableau(ws, col_idx, first_row, last_row):
-    """Couleur selon la discipline en tête (la plus forte pour le joueur)."""
+    """Une couleur différente pour chacune des 6 combinaisons possibles
+    (pas seulement 3 selon la seule discipline en tête)."""
     if last_row < first_row:
         return
     col = get_column_letter(col_idx)
     plage = f"{col}{first_row}:{col}{last_row}"
     ref = f"{col}{first_row}"
-    for prefixe, fill in (("Simple", FILL_SIMPLE), ("Double", FILL_DOUBLE), ("Mixte", FILL_MIXTE)):
-        ws.conditional_formatting.add(
-            plage, FormulaRule(formula=[f'LEFT({ref},{len(prefixe)})="{prefixe}"'], fill=fill))
+    for combo, fill in ORDRE_TABLEAU_COULEURS.items():
+        ws.conditional_formatting.add(plage, FormulaRule(formula=[f'{ref}="{combo}"'], fill=fill))
 
 
 def _degrade(ws, col_idx, first_row, last_row):
@@ -194,9 +210,10 @@ def _grouper(headers, *paires):
 
 
 def _encadrer_groupe(ws, first_col, last_col, first_row, last_row):
-    """Bordure moyenne autour d'un bloc de colonnes (première ligne =
-    en-tête) - aide à repérer visuellement les groupes de colonnes
-    apparentées (classement/cote, matchs/victoires/%, indices...)."""
+    """Bordure épaisse autour d'un bloc de colonnes (première ligne =
+    en-tête, y compris la/les ligne(s) de sur-en-tête s'il y en a) - aide à
+    repérer visuellement les groupes de colonnes apparentées (classement/
+    cote, matchs/victoires/%, indices...)."""
     if last_row < first_row:
         return
     for row in range(first_row, last_row + 1):
@@ -211,12 +228,77 @@ def _encadrer_groupe(ws, first_col, last_col, first_row, last_row):
             )
 
 
-def _ajouter_filtre(ws, nb_colonnes, last_row):
-    """Filtre Auto Excel (Data > Filter) sur l'en-tête, pour trier/filtrer
-    facilement sans dérouler un menu Excel à la main."""
-    if last_row < 1:
+def _lignes_legeres(ws, headers, noms_colonnes, first_row, last_row):
+    """Trait fin sur le bord gauche de chacune des colonnes nommées, de
+    first_row à last_row - divise des sous-groupes à l'intérieur d'un même
+    bloc thématique (ex: Classement septembre vs Classement actuel), plus
+    discret que la bordure épaisse qui encadre le bloc entier."""
+    if last_row < first_row:
         return
-    ws.auto_filter.ref = f"A1:{get_column_letter(nb_colonnes)}{last_row}"
+    for nom in noms_colonnes:
+        col_idx = headers.index(nom) + 1
+        for row in range(first_row, last_row + 1):
+            cell = ws.cell(row=row, column=col_idx)
+            border = cell.border
+            cell.border = Border(left=BORDURE_LEGERE, right=border.right,
+                                  top=border.top, bottom=border.bottom)
+
+
+def _ajouter_filtre(ws, nb_colonnes, header_row, last_row):
+    """Filtre Auto Excel (Data > Filter) sur la ligne des noms de colonnes
+    (pas la ligne de sur-en-tête s'il y en a une), pour trier/filtrer
+    facilement sans dérouler un menu Excel à la main."""
+    if last_row < header_row:
+        return
+    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(nb_colonnes)}{last_row}"
+
+
+def _ecrire_sur_entete(ws, headers, niveau1, niveau2=()):
+    """Écrit 2 lignes de sur-en-tête AVANT les noms de colonnes (donc à
+    appeler avant tout ws.append(headers)) : des cellules fusionnées
+    libellées au-dessus de chaque groupe thématique de colonnes -
+    complète les bordures (qui délimitent le groupe visuellement) par un
+    texte qui dit ce qu'il représente.
+
+    niveau1 : liste de (label, premier_header, dernier_header) - grands
+    thèmes, sur la ligne 1. niveau2 : liste de (label, premier_header,
+    dernier_header) - sous-thèmes plus fins, sur la ligne 2, seulement pour
+    les colonnes qui en ont besoin (les autres : le libellé niveau1 s'étend
+    verticalement sur les 2 lignes plutôt que de laisser la ligne 2 vide en
+    dessous). Renvoie le numéro de ligne où écrire `headers` ensuite (les
+    noms de colonnes)."""
+    def _colonnes(debut, fin):
+        return headers.index(debut) + 1, headers.index(fin) + 1
+
+    def _a_des_enfants(c0, c1):
+        return any(_colonnes(d, f)[0] >= c0 and _colonnes(d, f)[1] <= c1 for _, d, f in niveau2)
+
+    for label, debut, fin in niveau1:
+        c0, c1 = _colonnes(debut, fin)
+        r1, r2 = (1, 1) if _a_des_enfants(c0, c1) else (1, 2)
+        if c1 > c0 or r2 > r1:
+            ws.merge_cells(start_row=r1, start_column=c0, end_row=r2, end_column=c1)
+        cell = ws.cell(row=1, column=c0, value=label)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for label, debut, fin in niveau2:
+        c0, c1 = _colonnes(debut, fin)
+        if c1 > c0:
+            ws.merge_cells(start_row=2, start_column=c0, end_row=2, end_column=c1)
+        cell = ws.cell(row=2, column=c0, value=label)
+        cell.font = Font(italic=True, size=9)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+
+    # ws.append() se base sur un compteur de ligne interne qui n'est mis à
+    # jour que par des écritures via ws.cell(), pas par merge_cells() seul -
+    # sans ce "toucher" explicite de la ligne 2, un groupe niveau1 fusionné
+    # verticalement sur les lignes 1-2 (aucun enfant niveau2, cas des
+    # onglets par tableau) laisse le compteur bloqué sur 1, et le prochain
+    # ws.append(headers) écrase la ligne 2 au lieu de continuer en ligne 3.
+    ws.cell(row=2, column=1)
+
+    return 3
 
 
 # ------------------------------------------------------- onglets par tableau
@@ -233,11 +315,23 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     has_partner = tableau in ("Double", "Mixte")
     inclure_sexe = tableau == "Mixte"  # seul tableau qui mélange les deux genres
 
+    rows = []
+    for s in all_stats:
+        if sexe is not None and s["Sexe"] != sexe:
+            continue
+        entry = s["par_tableau"][tableau]
+        if entry["matchs_joues"] == 0:
+            continue
+        rows.append((s, entry))
+    rows.sort(key=lambda r: -r[1]["indice_global"])
+
+    mois_tries = sorted({mois for _, entry in rows for mois in entry["evolution_mensuelle_cote"]})
+
     headers = ["Nom"]
     if inclure_sexe:
         headers += ["Sexe"]
-    headers += ["Classement", "Cote", "Matchs joués", "Victoires", "% victoire"]
-    headers += ["Indice performance", "Indice niveau", "Indice global"]
+    headers += ["Classement", "Cote", "Diff cote", "Matchs joués", "Victoires", "% victoire"]
+    headers += ["Indice performance", "Indice niveau", "Indice qualité", "Indice global"]
     if has_partner:
         headers += [
             "Matchs avec partenaire club", "% avec partenaire club",
@@ -249,25 +343,37 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
             "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
         ]
-    ws.append(headers)
+    for mois in mois_tries:
+        headers += [f"Diff cote {mois}"]
 
-    rows = []
-    for s in all_stats:
-        if sexe is not None and s["Sexe"] != sexe:
-            continue
-        entry = s["par_tableau"][tableau]
-        if entry["matchs_joues"] == 0:
-            continue
-        rows.append((s, entry))
-    rows.sort(key=lambda r: -r[1]["indice_global"])
+    niveau1 = [
+        ("Classement & cote", "Classement", "Diff cote"),
+        ("Résultats", "Matchs joués", "% victoire"),
+        ("Indices", "Indice performance", "Indice global"),
+    ]
+    if has_partner:
+        niveau1 += [
+            ("Partenaire club", "Matchs avec partenaire club", "Delta % (avec - sans)"),
+            ("Meilleur partenaire", "Meilleur partenaire", "Points cote marqués ensemble"),
+            ("Meilleur partenaire au club", "Meilleur partenaire au club (si différent)",
+             "Points cote marqués ensemble (club)"),
+        ]
+    if mois_tries:
+        niveau1 += [("Évolution cote", f"Diff cote {mois_tries[0]}", f"Diff cote {mois_tries[-1]}")]
+
+    header_row = _ecrire_sur_entete(ws, headers, niveau1)
+    ws.append(headers)
 
     for s, entry in rows:
         row = [s["Nom"]]
         if inclure_sexe:
             row += [s["Sexe"]]
-        row += [entry["classement"], entry["cote"], entry["matchs_joues"], entry["victoires"],
-                _pct(entry["pct_victoire"])]
-        row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]), _pct(entry["indice_global"])]
+        diff_cote = s["progression"][tableau]["diff_points"]
+        row += [entry["classement"], entry["cote"],
+                round(diff_cote, 1) if diff_cote is not None else None,
+                entry["matchs_joues"], entry["victoires"], _pct(entry["pct_victoire"])]
+        row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]),
+                _pct(entry["indice_qualite"]), _pct(entry["indice_global"])]
         if has_partner:
             p = entry["partenaire"]
             avec, sans = p["avec_partenaire_club"], p["sans_partenaire_club"]
@@ -278,21 +384,16 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             ]
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire"])
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire_club"])
+        for mois in mois_tries:
+            row += [round(entry["evolution_mensuelle_cote"].get(mois, 0.0), 1)]
         ws.append(row)
 
-    _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
+    _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
 
-    groupes = [("Classement", "Cote"), ("Matchs joués", "% victoire"),
-               ("Indice performance", "Indice global")]
-    if has_partner:
-        groupes += [
-            ("Matchs avec partenaire club", "Delta % (avec - sans)"),
-            ("Meilleur partenaire", "Points cote marqués ensemble"),
-            ("Meilleur partenaire au club (si différent)", "Points cote marqués ensemble (club)"),
-        ]
+    groupes = [(g[1], g[2]) for g in niveau1]
     for c0, c1 in _grouper(headers, *groupes):
         _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
-    _ajouter_filtre(ws, len(headers), ws.max_row)
+    _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
     return ws
 
 
@@ -326,10 +427,11 @@ def _write_bilan_sheet(wb, all_stats):
         "Matchs total", "Victoires total", "% total",
         # rappel des indices par tableau (pas seulement le global agrégé,
         # pour qu'on sache de quel tableau ils parlent), puis le global
-        "Indice performance S", "Indice niveau S", "Indice global S",
-        "Indice performance D", "Indice niveau D", "Indice global D",
-        "Indice performance M", "Indice niveau M", "Indice global M",
-        "Indice performance (global)", "Indice niveau (global)", "Indice global (global)",
+        "Indice performance S", "Indice niveau S", "Indice qualité S", "Indice global S",
+        "Indice performance D", "Indice niveau D", "Indice qualité D", "Indice global D",
+        "Indice performance M", "Indice niveau M", "Indice qualité M", "Indice global M",
+        "Indice performance (global)", "Indice niveau (global)", "Indice qualité (global)",
+        "Indice global (global)",
         "Matchs avec partenaire club (D+M)", "% avec partenaire club",
         "Matchs sans partenaire club (D+M)", "% sans partenaire club",
         "Delta % partenaire (avec - sans)",
@@ -361,6 +463,46 @@ def _write_bilan_sheet(wb, all_stats):
         "Cote moyenne S", "Cote moyenne D", "Cote moyenne M",
         "Stabilité cote S (%)", "Stabilité cote D (%)", "Stabilité cote M (%)",
     ]
+
+    niveau1 = [
+        ("Résultats", "Matchs S", "% total"),
+        ("Indices", "Indice performance S", "Indice global (global)"),
+        ("Partenaire club", "Matchs avec partenaire club (D+M)", "Delta % partenaire (avec - sans)"),
+        ("Meilleur partenaire", "Meilleur partenaire (D+M)", "Points cote marqués ensemble"),
+        ("Tournois", "Nb tournois individuels", "Nb interclubs (par jour)"),
+        ("Évolution classement", "Classement sept. S", "Gain tableau M"),
+        ("Évolution place", "Place sept. S", "Gain places M"),
+        ("Évolution cote", "Cote sept. S", "Tendance cote cumulée (pts/semaine)"),
+        ("Cote sur la saison", "Cote min S", "Stabilité cote M (%)"),
+    ]
+    niveau2 = [
+        ("Simple", "Matchs S", "% S"), ("Double", "Matchs D", "% D"),
+        ("Mixte", "Matchs M", "% M"), ("Total", "Matchs total", "% total"),
+
+        ("Simple", "Indice performance S", "Indice global S"),
+        ("Double", "Indice performance D", "Indice global D"),
+        ("Mixte", "Indice performance M", "Indice global M"),
+        ("Global", "Indice performance (global)", "Indice global (global)"),
+
+        ("Classement septembre", "Classement sept. S", "Classement sept. M"),
+        ("Classement actuel", "Classement actuel S", "Classement actuel M"),
+        ("Gain tableau", "Gain tableau S", "Gain tableau M"),
+
+        ("Place septembre", "Place sept. S", "Place sept. M"),
+        ("Place actuelle", "Place actuelle S", "Place actuelle M"),
+        ("Gain places", "Gain places S", "Gain places M"),
+
+        ("Cote septembre", "Cote sept. S", "Cote sept. M"),
+        ("Cote actuelle", "Cote actuelle S", "Cote actuelle M"),
+        ("Diff cote", "Diff cote S", "Diff cote cumulée"),
+        ("Tendance cote", "Tendance cote S (pts/semaine)", "Tendance cote cumulée (pts/semaine)"),
+
+        ("Min", "Cote min S", "Cote min M"),
+        ("Max", "Cote max S", "Cote max M"),
+        ("Moyenne", "Cote moyenne S", "Cote moyenne M"),
+        ("Stabilité", "Stabilité cote S (%)", "Stabilité cote M (%)"),
+    ]
+    header_row = _ecrire_sur_entete(ws, headers, niveau1, niveau2)
     ws.append(headers)
 
     rows = sorted(all_stats, key=lambda s: -s["global"]["indice_global"])
@@ -379,7 +521,8 @@ def _write_bilan_sheet(wb, all_stats):
             g["matchs_joues"], g["victoires"], _pct(g["pct_victoire"]),
         ]
         for entry in (simple, double, mixte, g):
-            row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]), _pct(entry["indice_global"])]
+            row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]),
+                    _pct(entry["indice_qualite"]), _pct(entry["indice_global"])]
         row += [
             avec["matchs_joues"], _pct(avec["pct_victoire"]),
             sans["matchs_joues"], _pct(sans["pct_victoire"]),
@@ -406,23 +549,17 @@ def _write_bilan_sheet(wb, all_stats):
         row += _cote_saison_valeurs((simple, double, mixte), "stabilite", arrondi=True)
         ws.append(row)
 
-    _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
+    _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
 
-    groupes = _grouper(
-        headers,
-        ("Matchs S", "% total"),
-        ("Indice performance S", "Indice global (global)"),
-        ("Matchs avec partenaire club (D+M)", "Delta % partenaire (avec - sans)"),
-        ("Meilleur partenaire (D+M)", "Points cote marqués ensemble"),
-        ("Nb tournois individuels", "Nb interclubs (par jour)"),
-        ("Classement sept. S", "Gain tableau M"),
-        ("Place sept. S", "Gain places M"),
-        ("Cote sept. S", "Tendance cote cumulée (pts/semaine)"),
-        ("Cote min S", "Stabilité cote M (%)"),
-    )
-    for c0, c1 in groupes:
+    for c0, c1 in _grouper(headers, *[(g[1], g[2]) for g in niveau1]):
         _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
-    _ajouter_filtre(ws, len(headers), ws.max_row)
+
+    _lignes_legeres(ws, headers, ["Classement actuel S"], 2, ws.max_row)
+    _lignes_legeres(ws, headers, ["Place actuelle S", "Gain places S"], 2, ws.max_row)
+    _lignes_legeres(ws, headers,
+                     ["Cote actuelle S", "Diff cote S", "Tendance cote S (pts/semaine)"], 2, ws.max_row)
+
+    _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
     return ws
 
 
@@ -477,7 +614,7 @@ def _write_tournois_sheet(wb, all_stats):
     for row in rows:
         ws.append(row)
     _appliquer_mise_en_forme(ws, header, 2, 1 + len(rows))
-    _ajouter_filtre(ws, len(header), 1 + len(rows))
+    _ajouter_filtre(ws, len(header), 1, 1 + len(rows))
 
     # --- tableau + graphique club par mois ---
     ws.append([])
@@ -583,7 +720,7 @@ def _write_club_sheet(wb, all_stats):
     first_row = 2
     last_row = ws.max_row
     _appliquer_mise_en_forme(ws, header, first_row, last_row)
-    _ajouter_filtre(ws, len(header), last_row)
+    _ajouter_filtre(ws, len(header), header_row, last_row)
 
     if last_row >= first_row:
         bar = BarChart()
