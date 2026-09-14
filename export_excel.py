@@ -5,7 +5,7 @@ performance par colonne)."""
 from collections import Counter, defaultdict
 
 import openpyxl
-from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -70,7 +70,9 @@ CLASSEMENT_HEADERS = {
 TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Catégorie", "Meilleur partenaire", "Meilleur partenaire (D+M)",
                 "Meilleur partenaire au club (si différent)", "Ordre tableau",
                 "Meilleure victoire", "Meilleure victoire (score)",
-                "Pire défaite", "Pire défaite (score)"} | CLASSEMENT_HEADERS
+                "Pire défaite", "Pire défaite (score)",
+                "Score max infligé S", "Score max infligé D", "Score max infligé M",
+                "Score max reçu S", "Score max reçu D", "Score max reçu M"} | CLASSEMENT_HEADERS
 
 
 def _est_colonne_delta_partenaire(header):
@@ -887,6 +889,95 @@ def _write_club_sheet(wb, all_stats):
     return ws
 
 
+# --------------------------------------------------------------- Stats avancées
+
+# une ligne par métrique de profil de score, répétée pour chaque tableau
+# (suffixe S/D/M, comme "Classement sept. S" ailleurs) - voir stats.
+# profil_score / stats.sets_extremes.
+_METRIQUES_SCORE = ["Score moyen (moi)", "Score moyen (adversaire)", "Score max infligé", "Score max reçu",
+                     "Points moyens (victoire)", "Points moyens (défaite)",
+                     "Sets extrêmes joués", "Sets extrêmes gagnés"]
+_SUFFIXE_TABLEAU = {"Simple": "S", "Double": "D", "Mixte": "M"}
+
+
+def _write_stats_avancees_sheet(wb, all_stats):
+    ws = wb.create_sheet("Stats avancées")
+
+    headers = ["Nom", "Sexe"]
+    for tableau in ("Simple", "Double", "Mixte"):
+        s = _SUFFIXE_TABLEAU[tableau]
+        headers += [f"{m} {s}" for m in _METRIQUES_SCORE]
+
+    niveau1 = [(tableau, f"{_METRIQUES_SCORE[0]} {_SUFFIXE_TABLEAU[tableau]}",
+                f"{_METRIQUES_SCORE[-1]} {_SUFFIXE_TABLEAU[tableau]}")
+               for tableau in ("Simple", "Double", "Mixte")]
+    header_row = _ecrire_sur_entete(ws, headers, niveau1)
+    ws.append(headers)
+
+    rows = [s for s in all_stats
+            if any(s["par_tableau"][t]["matchs_joues"] > 0 for t in ("Simple", "Double", "Mixte"))]
+    rows.sort(key=lambda s: -s["global"]["indice_global"])
+
+    for s in rows:
+        row = [s["Nom"], s["Sexe"]]
+        for tableau in ("Simple", "Double", "Mixte"):
+            entry = s["par_tableau"][tableau]
+            ps, se = entry["profil_score"], entry["sets_extremes"]
+            row += [
+                round(ps["score_moyen_mien"], 1) if ps["score_moyen_mien"] is not None else None,
+                round(ps["score_moyen_adverse"], 1) if ps["score_moyen_adverse"] is not None else None,
+                ps["score_max_inflige"],
+                ps["score_max_recu"],
+                round(ps["points_moyens_victoire"], 1) if ps["points_moyens_victoire"] is not None else None,
+                round(ps["points_moyens_defaite"], 1) if ps["points_moyens_defaite"] is not None else None,
+                se["nb_joues"],
+                se["nb_gagnes"],
+            ]
+        ws.append(row)
+
+    _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
+    for c0, c1 in _grouper(headers, *[(g[1], g[2]) for g in niveau1]):
+        _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
+    _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
+
+    # --- sets au plafond de prolongation (30-29 / 21-20), résumé club ---
+    ws.append([])
+    ws.append(["Sets au plafond de prolongation (30-29 avant le 1er septembre 2026, 21-20 depuis)"])
+    resume_header_row = ws.max_row + 1
+    ws.append(["Indicateur", "Valeur"])
+    resume_first_row = ws.max_row + 1
+
+    nb_joues = nb_gagnes = joueurs_concernes = 0
+    for s in rows:
+        nb_joueur = sum(s["par_tableau"][t]["sets_extremes"]["nb_joues"] for t in ("Simple", "Double", "Mixte"))
+        if nb_joueur > 0:
+            joueurs_concernes += 1
+        nb_joues += nb_joueur
+        nb_gagnes += sum(s["par_tableau"][t]["sets_extremes"]["nb_gagnes"] for t in ("Simple", "Double", "Mixte"))
+    nb_perdus = nb_joues - nb_gagnes
+    pct = (nb_gagnes / nb_joues * 100) if nb_joues else None
+
+    ws.append(["Joueurs concernés (au moins 1 set)", joueurs_concernes])
+    ws.append(["Total joueurs", len(rows)])
+    ws.append(["Sets joués", nb_joues])
+    gagnes_row = ws.max_row + 1
+    ws.append(["Sets gagnés", nb_gagnes])
+    ws.append(["Sets perdus", nb_perdus])
+    ws.append(["% victoire dans ces sets", round(pct, 1) if pct is not None else None])
+    resume_last_row = ws.max_row
+
+    if nb_joues:
+        pie = PieChart()
+        pie.title = "Sets au plafond de prolongation : gagnés vs perdus"
+        data = Reference(ws, min_col=2, min_row=gagnes_row, max_row=gagnes_row + 1)
+        labels = Reference(ws, min_col=1, min_row=gagnes_row, max_row=gagnes_row + 1)
+        pie.add_data(data)
+        pie.set_categories(labels)
+        ws.add_chart(pie, f"D{resume_header_row}")
+
+    return ws
+
+
 def write_stats_excel(all_stats, output_path):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # feuille par défaut vide
@@ -897,6 +988,7 @@ def write_stats_excel(all_stats, output_path):
     _write_tournois_sheet(wb, all_stats)
     _write_bilan_sheet(wb, all_stats)
     _write_club_sheet(wb, all_stats)
+    _write_stats_avancees_sheet(wb, all_stats)
 
     wb.save(output_path)
     return output_path

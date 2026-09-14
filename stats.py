@@ -151,6 +151,48 @@ def points_cote_moyens(matchs):
     }
 
 
+def profil_score(matchs):
+    """Profil de score set par set (mon score, celui de l'adversaire) :
+    score moyen des deux côtés, plus gros écart infligé (set gagné avec la
+    plus grande marge) et reçu (set perdu avec la plus grande marge), et
+    points marqués en moyenne selon que le set est gagné ou perdu - un set
+    gagné à l'arraché (22-20) et un autre plié (21-5) comptent pareil pour
+    le nombre de sets, mais pas du tout pareil ici."""
+    tous_sets = [(mon, son) for m in matchs for mon, son in m["sets_detail"]]
+    if not tous_sets:
+        return {
+            "score_moyen_mien": None, "score_moyen_adverse": None,
+            "score_max_inflige": None, "score_max_recu": None,
+            "points_moyens_victoire": None, "points_moyens_defaite": None,
+        }
+    gagnes = [(mon, son) for mon, son in tous_sets if mon > son]
+    perdus = [(mon, son) for mon, son in tous_sets if son > mon]
+    max_inflige = max(gagnes, key=lambda s: s[0] - s[1]) if gagnes else None
+    max_recu = max(perdus, key=lambda s: s[1] - s[0]) if perdus else None
+    return {
+        "score_moyen_mien": sum(mon for mon, son in tous_sets) / len(tous_sets),
+        "score_moyen_adverse": sum(son for mon, son in tous_sets) / len(tous_sets),
+        "score_max_inflige": f"{max_inflige[0]}-{max_inflige[1]}" if max_inflige else None,
+        "score_max_recu": f"{max_recu[0]}-{max_recu[1]}" if max_recu else None,
+        "points_moyens_victoire": sum(mon for mon, son in gagnes) / len(gagnes) if gagnes else None,
+        "points_moyens_defaite": sum(mon for mon, son in perdus) / len(perdus) if perdus else None,
+    }
+
+
+def sets_extremes(matchs):
+    """Sets joués au plafond de prolongation exact (écart final d'1 seul
+    point - la seule façon d'avoir un écart de 1, quelle que soit la règle
+    en vigueur : 30-29 avant le 1er septembre 2026, 21-20 depuis le passage
+    aux sets de 15 points) - les plus tendus qui puissent exister. Nombre
+    joués/gagnés, et le détail des scores pour référence."""
+    extremes = [(mon, son) for m in matchs for mon, son in m["sets_detail"] if abs(mon - son) == 1]
+    return {
+        "nb_joues": len(extremes),
+        "nb_gagnes": sum(1 for mon, son in extremes if mon > son),
+        "scores": [f"{mon}-{son}" for mon, son in extremes],
+    }
+
+
 def _split_partenaire(matchs):
     avec_club = [m for m in matchs if m["partenaire_club"] == results.MY_CLUB]
     hors_club = [m for m in matchs
@@ -538,6 +580,8 @@ def build_player_stats(player, events_par_tableau):
             "meilleure_victoire": meilleure_victoire(matchs),
             "pire_defaite": pire_defaite(matchs),
             "clutch": indice_clutch(matchs),
+            "profil_score": profil_score(matchs),
+            "sets_extremes": sets_extremes(matchs),
         }
         if tableau in ("Double", "Mixte"):
             entry["partenaire"] = discipline_stats_partenaire(events)
