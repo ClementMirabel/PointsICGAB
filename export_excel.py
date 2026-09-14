@@ -707,30 +707,47 @@ CLUB_CATEGORIES = ["SH", "SD", "DH", "DD", "MX",
 _GENRE_CODE = {"H": "H", "F": "D"}
 
 
+CATEGORIE_CLUB_TOTAL = "Club (tous tableaux)"
+
+
 def _write_club_sheet(wb, all_stats):
     ws = wb.create_sheet("Stats club")
 
-    par_mois = defaultdict(lambda: {cat: {"joues": 0, "victoires": 0} for cat in CLUB_CATEGORIES})
-    # accumule aussi les matchs bruts par catégorie (pas juste les compteurs
-    # matchs/victoires) pour pouvoir rappeler stats.indice_clutch() club-wide
-    # ci-dessous - une même partie compte dans plusieurs catégories qui se
-    # chevauchent (ex: DH compte aussi dans "H (tous tableaux)"), comme pour
-    # les compteurs matchs/victoires juste au-dessus.
+    toutes_categories = CLUB_CATEGORIES + [CATEGORIE_CLUB_TOTAL]
+    par_mois = defaultdict(lambda: {cat: {"joues": 0, "victoires": 0} for cat in toutes_categories})
+    # total vs interclub uniquement, par catégorie (pas par mois) - un match
+    # intra-club (adversaire 100% GAB38, en tournoi individuel - un
+    # interclub oppose toujours deux clubs différents) apporte TOUJOURS 1
+    # victoire + 1 défaite au club, sans rien dire de sa performance face à
+    # l'extérieur : on l'exclut de tous les compteurs de cet onglet (mais
+    # pas des stats individuelles des joueurs concernés, qui restent des
+    # résultats bien réels pour eux).
+    par_categorie = defaultdict(lambda: {"total": {"joues": 0, "victoires": 0},
+                                          "interclub": {"joues": 0, "victoires": 0}})
+    # matchs bruts par catégorie (pas juste les compteurs) pour pouvoir
+    # rappeler stats.indice_clutch() club-wide plus bas.
     matchs_par_categorie = defaultdict(list)
-    tous_les_matchs = []
 
     def _add(mois, cat, m):
         b = par_mois[mois][cat]
         b["joues"] += 1
         b["victoires"] += 1 if m["victoire"] else 0
         matchs_par_categorie[cat].append(m)
+        bc = par_categorie[cat]
+        bc["total"]["joues"] += 1
+        bc["total"]["victoires"] += 1 if m["victoire"] else 0
+        if m["est_interclub"]:
+            bc["interclub"]["joues"] += 1
+            bc["interclub"]["victoires"] += 1 if m["victoire"] else 0
 
     for s in all_stats:
         sexe = s["Sexe"]
         genre_total = "H (tous tableaux)" if sexe == "H" else "F (tous tableaux)"
         for m in s["match_log"]:
+            if m["intra_club"]:
+                continue
             tableau, mois = m["tableau"], m["mois"]
-            tous_les_matchs.append(m)
+            _add(mois, CATEGORIE_CLUB_TOTAL, m)
             _add(mois, genre_total, m)
             if tableau == "Mixte":
                 _add(mois, "MX", m)
@@ -787,6 +804,34 @@ def _write_club_sheet(wb, all_stats):
         bar += line
         ws.add_chart(bar, f"B{last_row + 3}")
 
+    # --- total vs interclub uniquement, par catégorie ---
+    # "Diff interclub (%)" = choke (négatif) ou overperform (positif) en
+    # interclub par rapport au total (qui inclut déjà l'interclub - une
+    # comparaison contre le hors-interclub serait plus "pure", mais total
+    # vs interclub est ce qui a été demandé, et reste lisible tant que
+    # l'interclub n'est pas l'essentiel du volume de matchs).
+    ws.append([])
+    ws.append(["Total vs interclub, par catégorie"])
+    ti_header_row = ws.max_row + 1
+    ti_headers = ["Catégorie", "Matchs (total)", "Victoires (total)", "% (total)",
+                  "Matchs (interclub)", "Victoires (interclub)", "% (interclub)", "Diff interclub (%)"]
+    ws.append(ti_headers)
+    ti_first_row = ws.max_row + 1
+
+    for cat in toutes_categories:
+        b = par_categorie[cat]
+        t, ic = b["total"], b["interclub"]
+        pct_t = (t["victoires"] / t["joues"] * 100) if t["joues"] else None
+        pct_ic = (ic["victoires"] / ic["joues"] * 100) if ic["joues"] else None
+        diff = (pct_ic - pct_t) if pct_t is not None and pct_ic is not None else None
+        ws.append([
+            cat, t["joues"], t["victoires"], round(pct_t, 1) if pct_t is not None else None,
+            ic["joues"], ic["victoires"], round(pct_ic, 1) if pct_ic is not None else None,
+            round(diff, 1) if diff is not None else None,
+        ])
+    ti_last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, ti_headers, ti_first_row, ti_last_row)
+
     # --- clutchness club-wide, par catégorie ---
     ws.append([])
     ws.append(["Clutchness club (sets à 2 points d'écart ou moins)"])
@@ -795,8 +840,7 @@ def _write_club_sheet(wb, all_stats):
     ws.append(clutch_headers)
     clutch_first_row = ws.max_row + 1
 
-    matchs_par_categorie["Club (tous tableaux)"] = tous_les_matchs
-    for cat in CLUB_CATEGORIES + ["Club (tous tableaux)"]:
+    for cat in toutes_categories:
         c = stats.indice_clutch(matchs_par_categorie.get(cat, []))
         ws.append([
             cat, c["sets_serres_joues"], c["sets_serres_gagnes"],

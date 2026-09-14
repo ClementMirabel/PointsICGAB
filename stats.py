@@ -545,17 +545,23 @@ def build_player_stats(player, events_par_tableau):
 
     tournois = build_tournois(events_par_tableau)
 
-    # un enregistrement par match (tableau, mois, victoire, sets_detail),
-    # pour la ventilation mensuelle et le clutch club-wide (onglet Stats
-    # club) - inutile de stocker le sexe ici, on l'a déjà au niveau du
-    # joueur. sets_detail permet de rappeler indice_clutch() club-wide sans
-    # ré-analyser tous les matchs bruts (voir export_excel._write_club_sheet).
+    # un enregistrement par match (tableau, mois, victoire, sets_detail,
+    # est_interclub, intra_club), pour la ventilation mensuelle et le
+    # clutch club-wide (onglet Stats club) - inutile de stocker le sexe
+    # ici, on l'a déjà au niveau du joueur. sets_detail permet de rappeler
+    # indice_clutch() club-wide sans ré-analyser tous les matchs bruts (voir
+    # export_excel._write_club_sheet). intra_club = adversaire(s) 100% du
+    # club (GAB38 vs GAB38, un joueur du club contre un autre en tournoi
+    # individuel) - toujours 1 victoire + 1 défaite pour le club, dilue le %
+    # club vers 50% sans rien dire de sa performance face à l'extérieur.
     match_log = [
         {
             "tableau": tableau,
             "mois": parse_date_fr(e["date"]).strftime("%Y-%m"),
             "victoire": m["victoire"],
             "sets_detail": m["sets_detail"],
+            "est_interclub": e["est_interclub"],
+            "intra_club": bool(m["clubs_adverses"]) and all(c == results.MY_CLUB for c in m["clubs_adverses"]),
         }
         for tableau, events in events_par_tableau.items()
         for e in events
