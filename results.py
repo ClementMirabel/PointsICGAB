@@ -24,14 +24,46 @@ def _parse_date_iso(text):
     return date(int(annee), int(mois), int(jour))
 
 
+def _dernier_span(cell):
+    """Texte du dernier <span> d'une cellule, ou le texte brut de la cellule
+    s'il n'y a pas de <span> (voir parse_journal_complet - une cellule peut
+    empiler plusieurs <span>, un par résultat regroupé sur la même
+    semaine)."""
+    spans = cell.find_all("span")
+    return spans[-1].get_text(strip=True) if spans else cell.get_text(strip=True)
+
+
+def _somme_spans(cell):
+    """Somme des valeurs numériques de tous les <span> d'une cellule (voir
+    parse_journal_complet). None si aucune valeur numérique trouvée."""
+    valeurs = []
+    for span in (cell.find_all("span") or [cell]):
+        try:
+            valeurs.append(float(span.get_text(strip=True)))
+        except ValueError:
+            continue
+    return sum(valeurs) if valeurs else None
+
+
 def parse_journal_complet(soup):
     """Panel "Nombre de points / Classement" en mode tableau (bouton "Journal
     de suivi" cliqué, data-testid='player-ranking-elo'), pour le tableau
     (Simple/Double/Mixte) actuellement affiché -> liste de {date, points,
-    cote}, une entrée par ligne du journal (en général une par semaine où le
-    classement a bougé). [] si le bouton "Journal de suivi" n'a pas été
-    cliqué (la section est encore en mode graphique) ou si le tableau est
-    vide.
+    cote}, une entrée par ligne du journal. [] si le bouton "Journal de
+    suivi" n'a pas été cliqué (la section est encore en mode graphique) ou
+    si le tableau est vide.
+
+    Une ligne peut regrouper PLUSIEURS résultats de la même semaine
+    (constaté sur un joueur actif : plusieurs <span> empilés dans les
+    cellules Date/Commentaire/Points, mais une seule Cote résultante pour
+    toute la ligne) - la date de cette ligne, sans grande importance ici
+    (elle ne sert à aucun calcul), prend le dernier <span> ; les points
+    prennent la SOMME de tous les <span> (vérifié : le total colle
+    exactement à la variation de cote entre deux lignes consécutives, ex.
+    35+92+35=162 pour une ligne où la cote est passée de 2268 à 2430).
+    Concaténer bêtement le texte de la cellule (l'ancienne approche) cassait
+    le parsing de points ET faisait échouer le parsing de la date (qui
+    devenait illisible), perdant silencieusement la ligne entière.
 
     Plus fin que parse_classement_evolution (qui n'a qu'une poignée de
     points de mesure sur toute la saison, une tous les ~2 mois environ) -
@@ -53,13 +85,10 @@ def parse_journal_complet(soup):
         if len(cells) < 8:
             continue
         try:
-            entry_date = _parse_date_iso(cells[2].get_text(strip=True))
+            entry_date = _parse_date_iso(_dernier_span(cells[2]))
         except ValueError:
             continue
-        try:
-            points = float(cells[6].get_text(strip=True))
-        except ValueError:
-            points = None
+        points = _somme_spans(cells[6])
         try:
             cote = float(cells[7].get_text(strip=True))
         except ValueError:
