@@ -330,7 +330,10 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     headers = ["Nom"]
     if inclure_sexe:
         headers += ["Sexe"]
-    headers += ["Classement", "Cote", "Diff cote", "Matchs joués", "Victoires", "% victoire"]
+    headers += ["Classement", "Cote", "Diff cote"]
+    for mois in mois_tries:
+        headers += [f"Diff cote {mois}"]
+    headers += ["Matchs joués", "Victoires", "% victoire"]
     headers += ["Indice performance", "Indice niveau", "Indice qualité", "Indice global"]
     if has_partner:
         headers += [
@@ -343,11 +346,11 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
             "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
         ]
-    for mois in mois_tries:
-        headers += [f"Diff cote {mois}"]
 
-    niveau1 = [
-        ("Classement & cote", "Classement", "Diff cote"),
+    niveau1 = [("Classement & cote", "Classement", "Diff cote")]
+    if mois_tries:
+        niveau1 += [("Évolution cote", f"Diff cote {mois_tries[0]}", f"Diff cote {mois_tries[-1]}")]
+    niveau1 += [
         ("Résultats", "Matchs joués", "% victoire"),
         ("Indices", "Indice performance", "Indice global"),
     ]
@@ -358,9 +361,6 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             ("Meilleur partenaire au club", "Meilleur partenaire au club (si différent)",
              "Points cote marqués ensemble (club)"),
         ]
-    if mois_tries:
-        niveau1 += [("Évolution cote", f"Diff cote {mois_tries[0]}", f"Diff cote {mois_tries[-1]}")]
-
     header_row = _ecrire_sur_entete(ws, headers, niveau1)
     ws.append(headers)
 
@@ -370,8 +370,10 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             row += [s["Sexe"]]
         diff_cote = s["progression"][tableau]["diff_points"]
         row += [entry["classement"], entry["cote"],
-                round(diff_cote, 1) if diff_cote is not None else None,
-                entry["matchs_joues"], entry["victoires"], _pct(entry["pct_victoire"])]
+                round(diff_cote, 1) if diff_cote is not None else None]
+        for mois in mois_tries:
+            row += [round(entry["evolution_mensuelle_cote"].get(mois, 0.0), 1)]
+        row += [entry["matchs_joues"], entry["victoires"], _pct(entry["pct_victoire"])]
         row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]),
                 _pct(entry["indice_qualite"]), _pct(entry["indice_global"])]
         if has_partner:
@@ -384,8 +386,6 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             ]
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire"])
             row += _fmt_meilleur_partenaire(entry["meilleur_partenaire_club"])
-        for mois in mois_tries:
-            row += [round(entry["evolution_mensuelle_cote"].get(mois, 0.0), 1)]
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
