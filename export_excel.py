@@ -61,11 +61,11 @@ def _est_colonne_delta_partenaire(header):
 
 
 def _est_colonne_diff(header):
-    """Colonnes pouvant être négatives (diff cote, gain de places/tableau) :
-    dégradé divergent rouge-blanc-vert centré sur 0, plutôt que le dégradé
-    blanc->vert habituel (qui n'aurait pas de sens sur une échelle qui
-    traverse 0)."""
-    return "Diff" in header or "Gain" in header
+    """Colonnes pouvant être négatives (diff cote, gain de places/tableau,
+    tendance hebdo) : dégradé divergent rouge-blanc-vert centré sur 0,
+    plutôt que le dégradé blanc->vert habituel (qui n'aurait pas de sens sur
+    une échelle qui traverse 0)."""
+    return "Diff" in header or "Gain" in header or "Tendance" in header
 
 
 def _pct(value):
@@ -354,9 +354,12 @@ def _write_bilan_sheet(wb, all_stats):
         # niveau de départ - une version relative ferait paraître un joueur
         # bas niveau plus "progressif" qu'un joueur haut niveau pour un
         # progrès équivalent, ça n'a pas de sens (voir stats.diff_classement)
+        "Tendance cote S (pts/semaine)", "Tendance cote D (pts/semaine)",
+        "Tendance cote M (pts/semaine)", "Tendance cote cumulée (pts/semaine)",
         "Cote min S", "Cote min D", "Cote min M",
         "Cote max S", "Cote max D", "Cote max M",
         "Cote moyenne S", "Cote moyenne D", "Cote moyenne M",
+        "Stabilité cote S (%)", "Stabilité cote D (%)", "Stabilité cote M (%)",
     ]
     ws.append(headers)
 
@@ -395,9 +398,12 @@ def _write_bilan_sheet(wb, all_stats):
         row += _par_tableau(prog, "actuel_points")
         row += _par_tableau_arrondi(prog, "diff_points")
         row += [round(cum["diff_points"], 1) if cum["diff_points"] is not None else None]
+        row += _par_tableau_arrondi(prog, "tendance_hebdo")
+        row += [round(cum["tendance_hebdo"], 1) if cum["tendance_hebdo"] is not None else None]
         row += _cote_saison_valeurs((simple, double, mixte), "cote_min")
         row += _cote_saison_valeurs((simple, double, mixte), "cote_max")
         row += _cote_saison_valeurs((simple, double, mixte), "cote_moyenne", arrondi=True)
+        row += _cote_saison_valeurs((simple, double, mixte), "stabilite", arrondi=True)
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, 2, ws.max_row)
@@ -411,8 +417,8 @@ def _write_bilan_sheet(wb, all_stats):
         ("Nb tournois individuels", "Nb interclubs (par jour)"),
         ("Classement sept. S", "Gain tableau M"),
         ("Place sept. S", "Gain places M"),
-        ("Cote sept. S", "Diff cote cumulée"),
-        ("Cote min S", "Cote moyenne M"),
+        ("Cote sept. S", "Tendance cote cumulée (pts/semaine)"),
+        ("Cote min S", "Stabilité cote M (%)"),
     )
     for c0, c1 in groupes:
         _encadrer_groupe(ws, c0, c1, 1, ws.max_row)

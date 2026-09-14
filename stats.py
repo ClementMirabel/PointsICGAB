@@ -182,9 +182,19 @@ def diff_classement(player):
     - gain_places = rang de septembre - rang actuel : positif = a gagné des
       places (un rang plus PETIT est meilleur, donc rang qui baisse).
     - gain_tableau = de combien de tableaux (N1/N2/.../P12) le joueur a
-      progressé depuis septembre (positif = monté, ex: R4 -> N3 = +1)."""
+      progressé depuis septembre (positif = monté, ex: R4 -> N3 = +1).
+    - tendance_hebdo = diff_points / nombre de semaines écoulées depuis le
+      1er septembre - progression moyenne par semaine (None si moins d'une
+      semaine s'est écoulée, la valeur serait trop instable pour être
+      lisible)."""
     sept = player.get("Classement 1er septembre") or {}
     rang_actuel = player.get("Rang National Actuel") or {}
+    sept_date = sept.get("date")
+    semaines_ecoulees = None
+    if sept_date is not None:
+        jours = (date.today() - sept_date).days
+        if jours >= 7:
+            semaines_ecoulees = jours / 7
 
     def _index_tableau(classement):
         return roster.TABLEAUX.index(classement) if classement in roster.TABLEAUX else None
@@ -200,6 +210,10 @@ def diff_classement(player):
         diff_points = None
         if s is not None and s.get("points") is not None:
             diff_points = actuel_points - s["points"]
+
+        tendance_hebdo = None
+        if diff_points is not None and semaines_ecoulees is not None:
+            tendance_hebdo = diff_points / semaines_ecoulees
 
         gain_places = None
         if s is not None and s.get("rang") is not None and actuel_rang is not None:
@@ -219,13 +233,17 @@ def diff_classement(player):
             "actuel_rang": actuel_rang,
             "actuel_points": actuel_points,
             "diff_points": diff_points,
+            "tendance_hebdo": tendance_hebdo,
             "gain_places": gain_places,
             "gain_tableau": gain_tableau,
         }
         if diff_points is not None:
             total_diff_points += diff_points
 
-    resultat["cumule"] = {"diff_points": total_diff_points}
+    resultat["cumule"] = {
+        "diff_points": total_diff_points,
+        "tendance_hebdo": (total_diff_points / semaines_ecoulees) if semaines_ecoulees is not None else None,
+    }
     return resultat
 
 
@@ -302,15 +320,29 @@ def _cote_saison_stats(journal_entries):
     statsJoueurs.scrape_player via results.parse_journal_complet) -> min/max/
     moyenne de la cote observée cette saison (le journal de suivi repart à
     zéro à chaque "Initialisation saison", donc pas besoin de filtrer par
-    date ici)."""
+    date ici), + un indice de stabilité.
+
+    stabilite = 1 - (amplitude / moyenne), borné à 0 : proche de 100% = cote
+    qui a peu varié sur la saison, proche de 0% = grosses variations.
+    Nécessite au moins 2 points de mesure (sinon amplitude=0 donnerait
+    trivialement 100% dès la première mesure, ce qui ne voudrait rien dire -
+    "stable" doit vouloir dire "observé stable dans le temps", pas "une
+    seule observation")."""
     cotes = [e["cote"] for e in journal_entries if e.get("cote") is not None]
     if not cotes:
-        return {"cote_min": None, "cote_max": None, "cote_moyenne": None, "nb_points_mesure": 0}
+        return {"cote_min": None, "cote_max": None, "cote_moyenne": None,
+                "nb_points_mesure": 0, "stabilite": None}
+    cote_min, cote_max = min(cotes), max(cotes)
+    cote_moyenne = sum(cotes) / len(cotes)
+    stabilite = None
+    if len(cotes) >= 2 and cote_moyenne:
+        stabilite = max(0.0, 1 - (cote_max - cote_min) / cote_moyenne) * 100
     return {
-        "cote_min": min(cotes),
-        "cote_max": max(cotes),
-        "cote_moyenne": sum(cotes) / len(cotes),
+        "cote_min": cote_min,
+        "cote_max": cote_max,
+        "cote_moyenne": cote_moyenne,
         "nb_points_mesure": len(cotes),
+        "stabilite": stabilite,
     }
 
 
