@@ -383,6 +383,25 @@ def _fmt_ecart_cote(fm):
             "Victoire" if fm["victoire"] else "Défaite", fm["score"]]
 
 
+def _matchs_par_mois_tableau(all_stats, tableau, sexe):
+    """{mois: {"joues": int, "victoires": int}} agrégé pour ce tableau (et
+    ce genre si précisé - None pour Mixte, qui mélange les deux), matchs
+    intra-club exclus (même raisonnement que Stats club : un match GAB38
+    vs GAB38 apporte toujours 1 victoire + 1 défaite, ça dilue le %
+    affiché sans rien dire de la performance face à l'extérieur)."""
+    par_mois = defaultdict(lambda: {"joues": 0, "victoires": 0})
+    for s in all_stats:
+        if sexe is not None and s["Sexe"] != sexe:
+            continue
+        for m in s["match_log"]:
+            if m["tableau"] != tableau or m["intra_club"]:
+                continue
+            b = par_mois[m["mois"]]
+            b["joues"] += 1
+            b["victoires"] += 1 if m["victoire"] else 0
+    return par_mois
+
+
 def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     ws = wb.create_sheet(title)
     has_partner = tableau in ("Double", "Mixte")
@@ -492,6 +511,49 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     for c0, c1 in _grouper(headers, *groupes):
         _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
     _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
+
+    # --- matchs joués par mois + % de victoire, pour ce tableau ---
+    # placé sous le tableau principal (jamais à côté) pour ne jamais
+    # chevaucher une colonne de données, quelle que soit sa largeur.
+    par_mois = _matchs_par_mois_tableau(all_stats, tableau, sexe)
+    if par_mois:
+        ws.append([])
+        titre_row = ws.max_row + 1
+        ws.append([f"Matchs par mois ({title})"])
+        mois_header_row = ws.max_row + 1
+        ws.append(["Mois", "Matchs joués", "Victoires", "% victoire"])
+        mois_first_row = ws.max_row + 1
+        for mois in sorted(par_mois):
+            b = par_mois[mois]
+            pct = (b["victoires"] / b["joues"] * 100) if b["joues"] else 0.0
+            ws.append([mois, b["joues"], b["victoires"], round(pct, 1)])
+        mois_last_row = ws.max_row
+        _appliquer_mise_en_forme(ws, ["Mois", "Matchs joués", "Victoires", "% victoire"],
+                                  mois_first_row, mois_last_row)
+        _styliser_mini_tableau(ws, titre_row, mois_header_row, mois_last_row, 4)
+
+        bar = BarChart()
+        bar.type = "col"
+        bar.title = f"Matchs joués par mois et % de victoire ({title})"
+        bar.y_axis.title = "Matchs joués"
+        bar.x_axis.title = "Mois"
+
+        line = LineChart()
+        line.y_axis.axId = 200
+        line.y_axis.title = "% victoire"
+        line.y_axis.crosses = "max"
+
+        bar.add_data(Reference(ws, min_col=2, min_row=mois_header_row, max_row=mois_last_row),
+                     titles_from_data=True)
+        line.add_data(Reference(ws, min_col=4, min_row=mois_header_row, max_row=mois_last_row),
+                      titles_from_data=True)
+        categories = Reference(ws, min_col=1, min_row=mois_first_row, max_row=mois_last_row)
+        bar.set_categories(categories)
+        line.set_categories(categories)
+
+        bar += line
+        ws.add_chart(bar, f"B{mois_last_row + 2}")
+
     return ws
 
 
