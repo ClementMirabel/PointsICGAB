@@ -1305,6 +1305,21 @@ def _ajuster_largeurs_colonnes(ws, largeur_min=8, largeur_max=40):
         ws.column_dimensions[col].width = max(largeur_min, min(largeur_max, longueur + 2))
 
 
+# couleur d'onglet par feuille - repère rapide parmi les 9 tabs : même
+# logique de teinte que "Ordre tableau" (vert=Simple, bleu=Double,
+# orange=Mixte) pour les 5 onglets par discipline, une couleur distincte
+# pour chacun des 4 onglets de synthèse.
+TAB_COLORS = {
+    "SH": "FF27AE60", "SD": "FF27AE60",
+    "DH": "FF3498DB", "DD": "FF3498DB",
+    "MX": "FFE67E22",
+    "Tournois": "FF7F8C8D",
+    "Bilan joueur": "FF8E44AD",
+    "Stats club": "FF16A085",
+    "Stats avancées": "FFF1C40F",
+}
+
+
 def write_stats_excel(all_stats, output_path):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # feuille par défaut vide
@@ -1319,6 +1334,8 @@ def write_stats_excel(all_stats, output_path):
 
     for ws in wb.worksheets:
         _ajuster_largeurs_colonnes(ws)
+        if ws.title in TAB_COLORS:
+            ws.sheet_properties.tabColor = TAB_COLORS[ws.title]
 
     wb.save(output_path)
     return output_path
