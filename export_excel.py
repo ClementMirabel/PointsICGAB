@@ -74,7 +74,9 @@ TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Catégorie", "Meilleur partenaire", "Mei
                 "Score max infligé S", "Score max infligé D", "Score max infligé M",
                 "Score max reçu S", "Score max reçu D", "Score max reçu M",
                 "Résultat", "Tournoi", "Joueur A", "Joueur B", "Type", "Joueur",
-                "Tableau"} | CLASSEMENT_HEADERS
+                "Tableau", "Plus grosse perf", "Plus grosse perf (score)",
+                "Plus grosse contre-perf", "Plus grosse contre-perf (score)",
+                "Plus gros écart de cote", "Résultat (écart max)", "Score (écart max)"} | CLASSEMENT_HEADERS
 
 
 def _est_colonne_delta_partenaire(header):
@@ -324,6 +326,19 @@ def _fmt_fait_marquant(fm):
     return [fm["adversaire_nom"], round(fm["adversaire_cote"], 1), fm["score"]]
 
 
+def _fmt_fait_marquant_points(fm):
+    if not fm:
+        return [None, None, None]
+    return [fm["adversaire_nom"], round(fm["points_cote"], 1), fm["score"]]
+
+
+def _fmt_ecart_cote(fm):
+    if not fm:
+        return [None, None, None, None]
+    return [fm["adversaire_nom"], round(fm["ecart_cote"], 1),
+            "Victoire" if fm["victoire"] else "Défaite", fm["score"]]
+
+
 def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     ws = wb.create_sheet(title)
     has_partner = tableau in ("Double", "Mixte")
@@ -353,6 +368,9 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         "Cote adverse moyenne",
         "Meilleure victoire", "Meilleure victoire (cote adv)", "Meilleure victoire (score)",
         "Pire défaite", "Pire défaite (cote adv)", "Pire défaite (score)",
+        "Plus grosse perf", "Plus grosse perf (points)", "Plus grosse perf (score)",
+        "Plus grosse contre-perf", "Plus grosse contre-perf (points)", "Plus grosse contre-perf (score)",
+        "Plus gros écart de cote", "Écart de cote", "Résultat (écart max)", "Score (écart max)",
         "Sets serrés joués", "Sets serrés gagnés", "% clutch", "Diff clutch (%)",
     ]
     if has_partner:
@@ -401,6 +419,9 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         row += [round(cam, 1) if cam is not None else None]
         row += _fmt_fait_marquant(entry["meilleure_victoire"])
         row += _fmt_fait_marquant(entry["pire_defaite"])
+        row += _fmt_fait_marquant_points(entry["plus_grosse_perf"])
+        row += _fmt_fait_marquant_points(entry["plus_grosse_defaite_points"])
+        row += _fmt_ecart_cote(entry["plus_grande_difference_cote"])
         clutch = entry["clutch"]
         row += [
             clutch["sets_serres_joues"], clutch["sets_serres_gagnes"],
@@ -891,6 +912,26 @@ def _write_club_sheet(wb, all_stats):
         ])
     dy_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, dy_headers, dy_first_row, dy_last_row)
+
+    # --- David vs Goliath, par catégorie ---
+    ws.append([])
+    ws.append(["David vs Goliath, par catégorie (cote adverse vs la sienne)"])
+    dvg_header_row = ws.max_row + 1
+    dvg_headers = ["Catégorie", "Matchs en outsider", "% victoire en outsider",
+                   "Matchs en favori", "% victoire en favori"]
+    ws.append(dvg_headers)
+    dvg_first_row = ws.max_row + 1
+
+    for cat in toutes_categories:
+        dvg = stats.david_vs_goliath(matchs_par_categorie.get(cat, []))
+        ws.append([
+            cat, dvg["nb_outsider"],
+            round(dvg["taux_outsider"], 1) if dvg["taux_outsider"] is not None else None,
+            dvg["nb_favori"],
+            round(dvg["taux_favori"], 1) if dvg["taux_favori"] is not None else None,
+        ])
+    dvg_last_row = ws.max_row
+    _appliquer_mise_en_forme(ws, dvg_headers, dvg_first_row, dvg_last_row)
 
     # --- clutchness club-wide, par catégorie ---
     ws.append([])

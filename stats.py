@@ -90,6 +90,7 @@ def _fait_marquant(m):
         "adversaire_cote": m["adversaire_cote"],
         "ma_cote": m["ma_cote"],
         "score": " / ".join(f"{mon}-{son}" for mon, son in m["sets_detail"]),
+        "points_cote": m["points_cote"],
     }
 
 
@@ -112,6 +113,60 @@ def pire_defaite(matchs):
     if not candidats:
         return None
     return _fait_marquant(min(candidats, key=lambda m: m["adversaire_cote"]))
+
+
+def plus_grosse_perf(matchs):
+    """Le match qui a rapporté le plus de points de cote (forfaits exclus)
+    - la plus grosse perf de la saison en termes de gain de classement, pas
+    forcément contre l'adversaire le mieux coté (voir meilleure_victoire
+    pour ça - un match qui rapporte gros peut être contre un adversaire
+    "seulement" un peu mieux coté mais avec un écart de score qui compte
+    plus dans le barème que prévu, ou l'inverse)."""
+    candidats = [m for m in matchs if m["points_cote"] is not None and not _est_forfait(m)]
+    if not candidats:
+        return None
+    return _fait_marquant(max(candidats, key=lambda m: m["points_cote"]))
+
+
+def plus_grosse_defaite_points(matchs):
+    """Le match qui a coûté le plus de points de cote (forfaits exclus)."""
+    candidats = [m for m in matchs if m["points_cote"] is not None and not _est_forfait(m)]
+    if not candidats:
+        return None
+    return _fait_marquant(min(candidats, key=lambda m: m["points_cote"]))
+
+
+def plus_grande_difference_cote(matchs):
+    """Le match avec le plus grand écart de cote entre les deux joueurs,
+    peu importe le résultat - la confrontation la plus déséquilibrée sur le
+    papier de la saison (forfaits exclus, l'écart n'y reflète rien de
+    réel : l'adversaire absent n'a jamais vraiment affronté ce niveau)."""
+    candidats = [m for m in matchs
+                 if m["ma_cote"] is not None and m["adversaire_cote"] is not None and not _est_forfait(m)]
+    if not candidats:
+        return None
+    m = max(candidats, key=lambda m: abs(m["ma_cote"] - m["adversaire_cote"]))
+    resultat = _fait_marquant(m)
+    resultat["ecart_cote"] = abs(m["ma_cote"] - m["adversaire_cote"])
+    resultat["victoire"] = m["victoire"]
+    return resultat
+
+
+def david_vs_goliath(matchs):
+    """Parmi les matchs où l'adversaire avait une meilleure cote (outsider,
+    "David"), % de victoires ; parmi ceux où on avait la meilleure cote
+    (favori, "Goliath"), % de victoires. Forfaits exclus (le barème
+    n'ayant pas tourné, l'écart de cote n'y a jamais été mis à l'épreuve)."""
+    utiles = [m for m in matchs
+              if m["ma_cote"] is not None and m["adversaire_cote"] is not None and not _est_forfait(m)]
+    outsider = [m for m in utiles if m["adversaire_cote"] > m["ma_cote"]]
+    favori = [m for m in utiles if m["ma_cote"] > m["adversaire_cote"]]
+    return {
+        "nb_outsider": len(outsider),
+        "taux_outsider": (sum(1 for m in outsider if m["victoire"]) / len(outsider) * 100) if outsider else None,
+        "nb_favori": len(favori),
+        "taux_favori": (sum(1 for m in favori if m["victoire"]) / len(favori) * 100) if favori else None,
+    }
 
 
 SEUIL_SETS_SERRES = 3
@@ -621,6 +676,9 @@ def build_player_stats(player, events_par_tableau):
             "cote_adverse_moyenne": cote_adverse_moyenne(matchs),
             "meilleure_victoire": meilleure_victoire(matchs),
             "pire_defaite": pire_defaite(matchs),
+            "plus_grosse_perf": plus_grosse_perf(matchs),
+            "plus_grosse_defaite_points": plus_grosse_defaite_points(matchs),
+            "plus_grande_difference_cote": plus_grande_difference_cote(matchs),
             "clutch": indice_clutch(matchs),
             "profil_score": profil_score(matchs),
             "sets_extremes": sets_extremes(matchs),
@@ -676,6 +734,8 @@ def build_player_stats(player, events_par_tableau):
             "intra_club": bool(m["clubs_adverses"]) and all(c == results.MY_CLUB for c in m["clubs_adverses"]),
             "points_cote": m["points_cote"],
             "noms_adverses": m["noms_adverses"],
+            "ma_cote": m["ma_cote"],
+            "adversaire_cote": m["adversaire_cote"],
         }
         for tableau, events in events_par_tableau.items()
         for e in events
