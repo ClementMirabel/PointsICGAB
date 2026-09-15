@@ -966,33 +966,68 @@ _METRIQUES_SCORE = ["Score moyen (moi)", "Score moyen (adversaire)", "Score max 
 _SUFFIXE_TABLEAU = {"Simple": "S", "Double": "D", "Mixte": "M"}
 
 
+def _regrouper_dates_consecutives(dates):
+    """dates : liste de `date` -> liste de groupes (listes) de dates qui se
+    suivent jour par jour (au plus 1 jour d'écart) - un tournoi sur un
+    weekend (samedi + dimanche) reste un seul groupe, mais deux occurrences
+    du même nom à des dates éloignées (une compétition qui revient chaque
+    mois par exemple) restent distinctes."""
+    dates_triees = sorted(set(dates))
+    groupes = []
+    groupe_courant = []
+    for d in dates_triees:
+        if groupe_courant and (d - groupe_courant[-1]).days > 1:
+            groupes.append(groupe_courant)
+            groupe_courant = []
+        groupe_courant.append(d)
+    if groupe_courant:
+        groupes.append(groupe_courant)
+    return groupes
+
+
 def _tournois_participation(all_stats, min_joueurs=5):
-    """Pour chaque tournoi individuel (date + nom d'événement, hors
-    interclubs et hors matchs intra-club - qui ne disent rien de la
-    performance face à l'extérieur), les joueurs du club engagés et leur
-    bilan agrégé. Renvoie (meilleur, pire) - les deux tournois au % de
-    victoire le plus haut/bas, parmi ceux avec au moins `min_joueurs`
-    joueurs du club engagés (sinon trop peu pour être significatif). (None,
-    None) si aucun tournoi n'atteint ce seuil."""
-    par_tournoi = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0})
+    """Pour chaque tournoi individuel (hors interclubs et hors matchs
+    intra-club - qui ne disent rien de la performance face à l'extérieur),
+    les joueurs du club engagés et leur bilan agrégé. Un même tournoi peut
+    s'étaler sur plusieurs jours consécutifs (ex: weekend) : les matchs du
+    même nom d'événement à des dates qui se suivent (voir
+    _regrouper_dates_consecutives) sont fusionnés en une seule occurrence,
+    plutôt que comptés comme des tournois séparés jour par jour.
+
+    Renvoie (meilleur, pire) - les deux tournois au % de victoire le plus
+    haut/bas, parmi ceux avec au moins `min_joueurs` joueurs du club
+    engagés (sinon trop peu pour être significatif). (None, None) si aucun
+    tournoi n'atteint ce seuil."""
+    par_date = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0})
     for s in all_stats:
         for m in s["match_log"]:
             if m["est_interclub"] or m["intra_club"]:
                 continue
-            b = par_tournoi[(m["date"], m["evenement"])]
+            b = par_date[(m["evenement"], m["date"])]
             b["joueurs"].add(s["Nom"])
             b["joues"] += 1
             b["victoires"] += 1 if m["victoire"] else 0
 
+    dates_par_nom = defaultdict(list)
+    for nom, d in par_date:
+        dates_par_nom[nom].append(d)
+
     candidats = []
-    for (date_t, nom_t), b in par_tournoi.items():
-        if len(b["joueurs"]) < min_joueurs:
-            continue
-        pct = b["victoires"] / b["joues"] * 100 if b["joues"] else 0.0
-        candidats.append({
-            "nom": nom_t, "date": date_t, "joueurs": len(b["joueurs"]),
-            "matchs": b["joues"], "victoires": b["victoires"], "pct": pct,
-        })
+    for nom, dates in dates_par_nom.items():
+        for groupe in _regrouper_dates_consecutives(dates):
+            joueurs, joues, victoires = set(), 0, 0
+            for d in groupe:
+                b = par_date[(nom, d)]
+                joueurs |= b["joueurs"]
+                joues += b["joues"]
+                victoires += b["victoires"]
+            if len(joueurs) < min_joueurs:
+                continue
+            pct = victoires / joues * 100 if joues else 0.0
+            candidats.append({
+                "nom": nom, "date": groupe[0], "joueurs": len(joueurs),
+                "matchs": joues, "victoires": victoires, "pct": pct,
+            })
     if not candidats:
         return None, None
     return max(candidats, key=lambda c: c["pct"]), min(candidats, key=lambda c: c["pct"])
