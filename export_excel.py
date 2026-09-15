@@ -38,6 +38,48 @@ FILL_D = _uni("FF27AE60")  # vert
 FONT_BLANC = Font(color="FFFFFFFF")
 FONT_ROUGE = Font(color="FFE74C3C")
 
+FILL_ENTETE = _uni("FFE8E8E8")  # gris clair
+FILL_TITRE_BLOC = _uni("FFD9D9D9")  # gris un peu plus soutenu, pour le titre d'un mini-tableau
+FONT_GRAS = Font(bold=True)
+
+
+def _styliser_ligne(ws, row, last_col, fill=FILL_ENTETE, gras=True):
+    """Gras + fond gris sur une ligne (colonnes 1..last_col) - sans ça, une
+    ligne d'en-tête ou de titre ne se distingue pas visuellement d'une
+    ligne de données, ce qui rend un onglet à plusieurs tableaux empilés
+    difficile à lire (pas de repère pour savoir où un bloc commence)."""
+    for col in range(1, last_col + 1):
+        cell = ws.cell(row=row, column=col)
+        if gras:
+            cell.font = FONT_GRAS
+        cell.fill = fill
+
+
+def _styliser_mini_tableau(ws, titre_row, header_row, last_row, last_col):
+    """Style un mini-tableau empilé (titre + en-tête + données) : titre en
+    gras sur fond gris soutenu, en-tête en gras sur fond gris clair,
+    bordure fine autour de l'ensemble - pour qu'il se détache visuellement
+    des tableaux voisins sur le même onglet (sans ça, plusieurs
+    mini-tableaux à la suite se lisent comme un seul mur de chiffres)."""
+    _styliser_ligne(ws, titre_row, last_col, fill=FILL_TITRE_BLOC)
+    _styliser_ligne(ws, header_row, last_col, fill=FILL_ENTETE)
+    _encadrer_bloc(ws, titre_row, last_row, last_col)
+
+
+def _encadrer_bloc(ws, first_row, last_row, last_col):
+    """Bordure fine tout autour d'un bloc (titre + en-tête + données) -
+    sépare visuellement les mini-tableaux empilés les uns des autres."""
+    for row in range(first_row, last_row + 1):
+        for col in range(1, last_col + 1):
+            cell = ws.cell(row=row, column=col)
+            border = cell.border
+            cell.border = Border(
+                left=BORDURE_LEGERE if col == 1 else border.left,
+                right=BORDURE_LEGERE if col == last_col else border.right,
+                top=BORDURE_LEGERE if row == first_row else border.top,
+                bottom=BORDURE_LEGERE if row == last_row else border.bottom,
+            )
+
 # ordre tableau : une couleur par combinaison (pas juste par discipline en
 # tête) - même famille de teinte selon la discipline en tête (vert=Simple,
 # bleu=Double, orange=Mixte), une nuance plus soutenue pour la 2e place.
@@ -290,6 +332,7 @@ def _ecrire_sur_entete(ws, headers, niveau1, niveau2=()):
             ws.merge_cells(start_row=r1, start_column=c0, end_row=r2, end_column=c1)
         cell = ws.cell(row=1, column=c0, value=label)
         cell.font = Font(bold=True)
+        cell.fill = FILL_TITRE_BLOC
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     for label, debut, fin in niveau2:
@@ -298,6 +341,7 @@ def _ecrire_sur_entete(ws, headers, niveau1, niveau2=()):
             ws.merge_cells(start_row=2, start_column=c0, end_row=2, end_column=c1)
         cell = ws.cell(row=2, column=c0, value=label)
         cell.font = Font(italic=True, size=9)
+        cell.fill = FILL_ENTETE
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
     # ws.append() se base sur un compteur de ligne interne qui n'est mis à
@@ -402,6 +446,8 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         ]
     header_row = _ecrire_sur_entete(ws, headers, niveau1)
     ws.append(headers)
+    _styliser_ligne(ws, header_row, len(headers))
+    ws.freeze_panes = f"B{header_row + 1}"
 
     for s, entry in rows:
         row = [s["Nom"]]
@@ -556,6 +602,8 @@ def _write_bilan_sheet(wb, all_stats):
     ]
     header_row = _ecrire_sur_entete(ws, headers, niveau1, niveau2)
     ws.append(headers)
+    _styliser_ligne(ws, header_row, len(headers))
+    ws.freeze_panes = f"B{header_row + 1}"
 
     rows = sorted(all_stats, key=lambda s: -s["global"]["indice_global"])
     for s in rows:
@@ -799,6 +847,8 @@ def _write_club_sheet(wb, all_stats):
     last_row = ws.max_row
     _appliquer_mise_en_forme(ws, header, first_row, last_row)
     _ajouter_filtre(ws, len(header), header_row, last_row)
+    _styliser_ligne(ws, header_row, len(header))
+    ws.freeze_panes = f"B{first_row}"
 
     if last_row >= first_row:
         bar = BarChart()
@@ -836,6 +886,7 @@ def _write_club_sheet(wb, all_stats):
     # vs interclub est ce qui a été demandé, et reste lisible tant que
     # l'interclub n'est pas l'essentiel du volume de matchs).
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Total vs interclub, par catégorie"])
     ti_header_row = ws.max_row + 1
     ti_headers = ["Catégorie", "Matchs (total)", "Victoires (total)", "% (total)",
@@ -856,12 +907,14 @@ def _write_club_sheet(wb, all_stats):
         ])
     ti_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, ti_headers, ti_first_row, ti_last_row)
+    _styliser_mini_tableau(ws, titre_row, ti_header_row, ti_last_row, len(ti_headers))
 
     # --- points de cote gagnés/perdus, total vs interclub, par catégorie ---
     # "Diff interclub" (gagnés et perdus) : l'interclub rapporte/coûte-t-il
     # plus de points en moyenne qu'un match hors interclub - barème FFBad
     # différent en compétition par équipe ?
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Points de cote gagnés/perdus, par catégorie"])
     pc_header_row = ws.max_row + 1
     pc_headers = ["Catégorie", "Pts gagnés (total)", "Pts perdus (total)",
@@ -890,9 +943,11 @@ def _write_club_sheet(wb, all_stats):
         ])
     pc_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, pc_headers, pc_first_row, pc_last_row)
+    _styliser_mini_tableau(ws, titre_row, pc_header_row, pc_last_row, len(pc_headers))
 
     # --- dynamique de match club-wide, par catégorie ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Dynamique de match, par catégorie"])
     dy_header_row = ws.max_row + 1
     dy_headers = ["Catégorie", "Matchs gagnés", "Taux propre (%)",
@@ -912,9 +967,11 @@ def _write_club_sheet(wb, all_stats):
         ])
     dy_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, dy_headers, dy_first_row, dy_last_row)
+    _styliser_mini_tableau(ws, titre_row, dy_header_row, dy_last_row, len(dy_headers))
 
     # --- David vs Goliath, par catégorie ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["David vs Goliath, par catégorie (cote adverse vs la sienne)"])
     dvg_header_row = ws.max_row + 1
     dvg_headers = ["Catégorie", "Matchs en outsider", "% victoire en outsider",
@@ -932,9 +989,11 @@ def _write_club_sheet(wb, all_stats):
         ])
     dvg_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, dvg_headers, dvg_first_row, dvg_last_row)
+    _styliser_mini_tableau(ws, titre_row, dvg_header_row, dvg_last_row, len(dvg_headers))
 
     # --- clutchness club-wide, par catégorie ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Clutchness club (sets à 2 points d'écart ou moins)"])
     clutch_header_row = ws.max_row + 1
     clutch_headers = ["Catégorie", "Sets serrés joués", "Sets serrés gagnés", "% clutch", "Diff clutch (%)"]
@@ -950,6 +1009,7 @@ def _write_club_sheet(wb, all_stats):
         ])
     clutch_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, clutch_headers, clutch_first_row, clutch_last_row)
+    _styliser_mini_tableau(ws, titre_row, clutch_header_row, clutch_last_row, len(clutch_headers))
 
     return ws
 
@@ -1099,6 +1159,8 @@ def _write_stats_avancees_sheet(wb, all_stats):
                for tableau in ("Simple", "Double", "Mixte")]
     header_row = _ecrire_sur_entete(ws, headers, niveau1)
     ws.append(headers)
+    _styliser_ligne(ws, header_row, len(headers))
+    ws.freeze_panes = f"B{header_row + 1}"
 
     rows = [s for s in all_stats
             if any(s["par_tableau"][t]["matchs_joues"] > 0 for t in ("Simple", "Double", "Mixte"))]
@@ -1131,6 +1193,7 @@ def _write_stats_avancees_sheet(wb, all_stats):
 
     # --- sets au plafond de prolongation (30-29 / 21-20), résumé club ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Sets au plafond de prolongation (30-29 avant le 1er septembre 2026, 21-20 depuis)"])
     resume_header_row = ws.max_row + 1
     ws.append(["Indicateur", "Valeur"])
@@ -1154,6 +1217,7 @@ def _write_stats_avancees_sheet(wb, all_stats):
     ws.append(["Sets perdus", nb_perdus])
     ws.append(["% victoire dans ces sets", round(pct, 1) if pct is not None else None])
     resume_last_row = ws.max_row
+    _styliser_mini_tableau(ws, titre_row, resume_header_row, resume_last_row, 2)
 
     if nb_joues:
         pie = PieChart()
@@ -1166,6 +1230,7 @@ def _write_stats_avancees_sheet(wb, all_stats):
 
     # --- tournoi le plus / le moins victorieux (min. 5 joueurs engagés) ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Tournoi le plus / le moins victorieux (au moins 5 joueurs du club engagés)"])
     tournoi_header_row = ws.max_row + 1
     tournoi_headers = ["Résultat", "Tournoi", "Joueurs engagés", "Matchs", "Victoires", "% victoire"]
@@ -1179,9 +1244,11 @@ def _write_stats_avancees_sheet(wb, all_stats):
             ws.append([label, t["nom"], t["joueurs"], t["matchs"], t["victoires"], round(t["pct"], 1)])
     tournoi_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, tournoi_headers, tournoi_first_row, tournoi_last_row)
+    _styliser_mini_tableau(ws, titre_row, tournoi_header_row, tournoi_last_row, len(tournoi_headers))
 
     # --- rivalités entre joueurs du club, en Simple ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Rivalités entre joueurs du club (Simple, matchs intra-club)"])
     riv_header_row = ws.max_row + 1
     riv_headers = ["Joueur A", "Joueur B", "Confrontations", "Victoires A", "Victoires B"]
@@ -1193,9 +1260,11 @@ def _write_stats_avancees_sheet(wb, all_stats):
     riv_last_row = ws.max_row
     if riv_last_row >= riv_first_row:
         _appliquer_mise_en_forme(ws, riv_headers, riv_first_row, riv_last_row)
+    _styliser_mini_tableau(ws, titre_row, riv_header_row, riv_last_row, len(riv_headers))
 
     # --- plus gros pics/chutes de cote sur un mois, par tableau et genre ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Plus gros pics/chutes de cote sur un mois, par tableau et par genre"])
     pic_header_row = ws.max_row + 1
     pic_headers = ["Tableau", "Sexe", "Type", "Joueur", "Mois", "Delta cote"]
@@ -1206,6 +1275,7 @@ def _write_stats_avancees_sheet(wb, all_stats):
     pic_last_row = ws.max_row
     if pic_last_row >= pic_first_row:
         _appliquer_mise_en_forme(ws, pic_headers, pic_first_row, pic_last_row)
+    _styliser_mini_tableau(ws, titre_row, pic_header_row, pic_last_row, len(pic_headers))
 
     return ws
 
