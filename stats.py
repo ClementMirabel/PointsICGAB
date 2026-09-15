@@ -140,14 +140,19 @@ def plus_grande_difference_cote(matchs):
     """Le match avec le plus grand écart de cote entre les deux joueurs,
     peu importe le résultat - la confrontation la plus déséquilibrée sur le
     papier de la saison (forfaits exclus, l'écart n'y reflète rien de
-    réel : l'adversaire absent n'a jamais vraiment affronté ce niveau)."""
+    réel : l'adversaire absent n'a jamais vraiment affronté ce niveau).
+
+    ecart_cote est SIGNÉ (ma_cote - adversaire_cote), pas une valeur
+    absolue : négatif = j'étais l'outsider dans ce match, positif = le
+    favori - le signe dit directement dans quel sens penchait le papier,
+    pas seulement l'ampleur de l'écart."""
     candidats = [m for m in matchs
                  if m["ma_cote"] is not None and m["adversaire_cote"] is not None and not _est_forfait(m)]
     if not candidats:
         return None
     m = max(candidats, key=lambda m: abs(m["ma_cote"] - m["adversaire_cote"]))
     resultat = _fait_marquant(m)
-    resultat["ecart_cote"] = abs(m["ma_cote"] - m["adversaire_cote"])
+    resultat["ecart_cote"] = m["ma_cote"] - m["adversaire_cote"]
     resultat["victoire"] = m["victoire"]
     return resultat
 

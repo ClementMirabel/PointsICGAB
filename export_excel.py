@@ -370,7 +370,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         "Pire défaite", "Pire défaite (cote adv)", "Pire défaite (score)",
         "Plus grosse perf", "Plus grosse perf (points)", "Plus grosse perf (score)",
         "Plus grosse contre-perf", "Plus grosse contre-perf (points)", "Plus grosse contre-perf (score)",
-        "Plus gros écart de cote", "Écart de cote", "Résultat (écart max)", "Score (écart max)",
+        "Plus gros écart de cote", "Diff de cote (écart max)", "Résultat (écart max)", "Score (écart max)",
         "Sets serrés joués", "Sets serrés gagnés", "% clutch", "Diff clutch (%)",
     ]
     if has_partner:
