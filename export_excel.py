@@ -715,9 +715,12 @@ def _write_tournois_sheet(wb, all_stats):
         ws.append(row)
     _appliquer_mise_en_forme(ws, header, 2, 1 + len(rows))
     _ajouter_filtre(ws, len(header), 1, 1 + len(rows))
+    _styliser_ligne(ws, 1, len(header))
+    ws.freeze_panes = "B2"
 
     # --- tableau + graphique club par mois ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Par mois (club)"])
     mois_header_row = ws.max_row + 1
     ws.append(["Mois", "Tournois weekend", "Tournois soirée", "Interclubs"])
@@ -738,9 +741,11 @@ def _write_tournois_sheet(wb, all_stats):
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(categories)
         ws.add_chart(chart, f"F{mois_header_row}")
+    _styliser_mini_tableau(ws, titre_row, mois_header_row, mois_last_row, 4)
 
     # --- distribution : nombre de joueurs par nombre de tournois individuels ---
     ws.append([])
+    titre_row = ws.max_row + 1
     ws.append(["Joueurs par nombre de tournois individuels"])
     dist_header_row = ws.max_row + 1
     ws.append(["Nb tournois", "Nb joueurs"])
@@ -761,6 +766,7 @@ def _write_tournois_sheet(wb, all_stats):
         chart2.add_data(data2, titles_from_data=True)
         chart2.set_categories(categories2)
         ws.add_chart(chart2, f"F{dist_header_row + 18}")
+    _styliser_mini_tableau(ws, titre_row, dist_header_row, dist_last_row, 2)
 
     return ws
 
@@ -1280,6 +1286,25 @@ def _write_stats_avancees_sheet(wb, all_stats):
     return ws
 
 
+def _ajuster_largeurs_colonnes(ws, largeur_min=8, largeur_max=40):
+    """Largeur de chaque colonne ajustée au contenu le plus long qu'elle
+    contient (en-tête compris) - par défaut openpyxl laisse toutes les
+    colonnes à la largeur standard d'Excel, bien trop étroite pour des
+    en-têtes comme "Meilleur partenaire au club (si différent)" ou un nom
+    de tournoi à rallonge. Plafonnée pour qu'un texte exceptionnellement
+    long n'élargisse pas toute la feuille à l'excès."""
+    largeurs = {}
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value is None:
+                continue
+            longueur = len(str(cell.value))
+            col = cell.column_letter
+            largeurs[col] = max(largeurs.get(col, 0), longueur)
+    for col, longueur in largeurs.items():
+        ws.column_dimensions[col].width = max(largeur_min, min(largeur_max, longueur + 2))
+
+
 def write_stats_excel(all_stats, output_path):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # feuille par défaut vide
@@ -1291,6 +1316,9 @@ def write_stats_excel(all_stats, output_path):
     _write_bilan_sheet(wb, all_stats)
     _write_club_sheet(wb, all_stats)
     _write_stats_avancees_sheet(wb, all_stats)
+
+    for ws in wb.worksheets:
+        _ajuster_largeurs_colonnes(ws)
 
     wb.save(output_path)
     return output_path
