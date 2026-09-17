@@ -315,9 +315,17 @@ def _parse_results_with_retry(driver, mon_nom=None, tentatives=6, pause=0.5):
         tentatives, pause)
 
 
-def _parse_evolution_with_retry(driver, tentatives=6, pause=0.5):
+def _parse_evolution_with_retry(driver, tentatives=10, pause=1):
     """Même principe que _parse_results_with_retry, pour le panel Évolution
-    classement."""
+    classement - mais avec un budget plus généreux (10s au lieu de 3s) : ce
+    panneau n'a pas de garde-fou "Voir plus" en amont (charger_tous_les_
+    resultats) comme Résultats/Journal de suivi, donc toute la robustesse
+    contre un rendu lent repose uniquement sur cette boucle. Constaté :
+    revient vide pour TOUS les joueurs sur le runner CI (GitHub Actions),
+    alors qu'un dump --debug pris en local au même moment fonctionne très
+    bien - la page charge, mais visiblement pas assez vite pour un budget
+    de 3s sous CI, symptôme identique à l'incident CLICK_PAUSE=0.4s
+    (sous-provisionner le temps d'attente perd des données en silence)."""
     return _stabilise(
         lambda: results.parse_classement_evolution(_soup(driver)),
         len,
