@@ -2,9 +2,11 @@ name: Weekly Excel export
 
 on:
   schedule:
-    # Jeudi 10:00 UTC ≈ midi à Paris (11:00 en hiver/CET, 12:00 en été/CEST -
-    # cron ne gère pas le changement d'heure, donc à ~1h près selon la saison)
-    - cron: "0 10 * * 4"
+    # Jeudi 01:00 UTC ≈ 2h du matin à Paris en hiver/CET (3h en été/CEST -
+    # cron ne gère pas le changement d'heure, donc à ~1h près selon la
+    # saison ; la majorité de la saison de badminton, sept-mai, est en
+    # heure d'hiver, d'où ce choix).
+    - cron: "0 1 * * 4"
   push:
     branches: [ main ]
     paths:
