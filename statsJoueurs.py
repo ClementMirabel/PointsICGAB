@@ -99,12 +99,18 @@ def click(driver, element):
 
 
 def expand_all_sections(driver):
-    """Déplie chaque section repliable (Résultats, classement, ...)."""
+    """Déplie chaque section repliable (Résultats, classement, ...) - sauf
+    celles déjà ouvertes (chevron "rotate-180", voir expand_section_by_
+    text), pour ne pas les refermer par erreur : au moins un panneau
+    ("Nombre de points / Classement") est ouvert par défaut sur la page
+    joueur, contrairement aux autres."""
     count = len(driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']"))
     for i in range(count):
         items = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']")
         if i >= len(items):
             break
+        if items[i].find_elements(By.CSS_SELECTOR, "svg.rotate-180"):
+            continue
         try:
             click(driver, items[i])
         except Exception as e:
@@ -131,11 +137,24 @@ def expand_section_by_text(driver, texte):
     confirmé en inspectant le DOM réel avec l'utilisateur : chercher le
     mauvais texte le laissait fermé/vide en permanence, sans erreur,
     quel que soit le budget de retry alloué. À vérifier au cas par cas
-    plutôt que de supposer que le libellé suit le nom de la donnée."""
+    plutôt que de supposer que le libellé suit le nom de la donnée.
+
+    Idempotent : si le panneau est déjà ouvert (chevron avec la classe
+    "rotate-180", constaté sur le DOM réel - tous les autres panneaux de
+    la page en sont dépourvus par défaut), on ne clique PAS - cliquer sur
+    un panneau déjà ouvert le REFERME au lieu de l'ouvrir. Piège identifié
+    sur "Nombre de points / Classement" : contrairement aux autres
+    panneaux, celui-ci est ouvert par défaut sur la page joueur - notre
+    clic systématique le refermait juste avant qu'on essaie de lire ses
+    cartes de cote/classement live, qui ressortaient vides en boucle
+    (jamais "en cours de rendu", donc aucun budget de retry n'y changeait
+    quoi que ce soit)."""
     cible = texte.lower()
     for item in driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']"):
         if cible in (item.get_attribute("textContent") or "").lower():
-            click(driver, item)
+            deja_ouvert = bool(item.find_elements(By.CSS_SELECTOR, "svg.rotate-180"))
+            if not deja_ouvert:
+                click(driver, item)
             return True
     return False
 
