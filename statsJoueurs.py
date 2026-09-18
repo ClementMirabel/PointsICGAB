@@ -461,6 +461,11 @@ def scrape_player(driver, player):
     # cote. Le bouton "Voir plus" y existe potentiellement aussi (même
     # composant que pour Résultats) - même garde-fou par précaution.
     expand_section_by_text(driver, "Nombre de points / Classement")
+    # cote/classement/rang fédéral LIVE (cartes "player-ranking-card"),
+    # capturés tout de suite après le dépli du panel, avant les bascules
+    # Journal de suivi/Double/Mixte ci-dessous (qui ne touchent que le
+    # graphique, pas ces cartes) - voir results.parse_player_ranking_cards.
+    ranking_live = results.parse_player_ranking_cards(_soup(driver))
     click_buttons_by_text(driver, "Journal de suivi", container_testid="player-ranking-elo")
     charger_tous_les_resultats(driver, container_testid="player-ranking-elo")
     journal = {"Simple": _parse_journal_with_retry(driver)}
@@ -487,20 +492,32 @@ def scrape_player(driver, player):
     # la cote "les tops" (roster, page publique) peut manquer un tableau où
     # le joueur a pourtant joué - filtre non documenté de cette page
     # publique (voir roster.fetch_club_roster), constaté sur un joueur N3 en
-    # Simple qui ressortait avec une cote à 0. La ligne la plus récente de
-    # l'historique de classement (sa propre page, authentifiée) est plus
-    # fiable et couvre toujours les 3 tableaux : on l'utilise pour corriger
-    # la cote, et on récupère au passage la PLACE NATIONALE actuelle - à ne
-    # pas confondre avec player["Rang Actuel"] (roster), qui est la position
-    # du joueur DANS LE CLUB pour ce tableau, pas son rang national (utilisé
-    # tel quel ailleurs pour pointsIC.py, où c'est le bon niveau de détail).
-    actuel = evolution[0] if evolution else None
+    # Simple qui ressortait avec une cote à 0. On corrige avec la valeur la
+    # plus fiable disponible : en priorité ranking_live (cartes "Nombre de
+    # points/Classement", page principale, valeur live) - la dernière ligne
+    # de l'historique de classement (evolution[0]) ne sert qu'en secours,
+    # car elle ne se met à jour que sporadiquement (par ex. tous les 6
+    # mois, constaté) et peut donc être très en retard sur la valeur
+    # actuelle. On récupère aussi le rang fédéral (national) au passage - à
+    # ne pas confondre avec player["Rang Actuel"] (roster), qui est la
+    # position du joueur DANS LE CLUB pour ce tableau, pas son rang
+    # national (utilisé tel quel ailleurs pour pointsIC.py, où c'est le bon
+    # niveau de détail).
+    evolution_actuel = evolution[0] if evolution else None
     player["Rang National Actuel"] = {}
     for tableau in ("Simple", "Double", "Mixte"):
-        bloc = (actuel or {}).get(tableau) or {}
-        player["Rang National Actuel"][tableau] = bloc.get("rang")
-        if bloc.get("points") is not None:
-            player["Points Actuel"][tableau] = bloc["points"]
+        bloc_live = ranking_live.get(tableau) or {}
+        bloc_evolution = (evolution_actuel or {}).get(tableau) or {}
+        rang = bloc_live.get("rang")
+        player["Rang National Actuel"][tableau] = rang if rang is not None else bloc_evolution.get("rang")
+        points = bloc_live.get("points")
+        if points is None:
+            points = bloc_evolution.get("points")
+        if points is not None:
+            player["Points Actuel"][tableau] = points
+        classement = bloc_live.get("classement")
+        if classement is not None:
+            player["Classement Actuel"][tableau] = classement
 
     nb_avant_filtre = _nb_matchs(events)
     events = {tableau: _filtrer_saison_courante(es) for tableau, es in events.items()}

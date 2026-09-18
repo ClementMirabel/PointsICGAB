@@ -148,6 +148,53 @@ def find_september_1(entries, annee):
     return next((e for e in entries if e["date"] == cible), None)
 
 
+def parse_player_ranking_cards(soup):
+    """Panneau "Nombre de points / Classement" (page principale du joueur,
+    data-testid='player-ranking', une carte par tableau) -> {"Simple":
+    {"points", "classement", "rang"}, "Double": {...}, "Mixte": {...}}.
+
+    Source la plus directe possible pour la cote/le classement/le rang
+    fédéral actuels : sur la page PRINCIPALE du joueur (déjà visitée, pas
+    besoin de naviguer vers la page séparée classement-historique comme
+    pour parse_classement_evolution), donc moins de points de défaillance
+    - à privilégier comme source principale plutôt qu'en secours (la
+    dernière ligne de l'historique de classement donne en théorie la même
+    valeur, mais dépend d'une navigation + un panel supplémentaires qui
+    peuvent échouer indépendamment)."""
+    section = soup.find(attrs={"data-testid": "player-ranking"})
+    if section is None:
+        return {}
+
+    resultat = {}
+    for card in section.find_all(attrs={"data-testid": "player-ranking-card"}):
+        h2 = card.find("h2")
+        tableau = h2.get_text(strip=True) if h2 else None
+        if tableau not in ("Simple", "Double", "Mixte"):
+            continue
+        recto = card.find(attrs={"data-testid": "player-ranking-card-recto-face"})
+        if recto is None:
+            continue
+
+        points_div = recto.find("div", class_="text-5xl")
+        points_text = points_div.get_text(strip=True) if points_div else ""
+        badge = recto.find(attrs={"data-testid": "badge-ranking"})
+
+        rang = None
+        rang_bloc = recto.find(attrs={"data-testid": "player-ranks-federal"})
+        if rang_bloc is not None:
+            span = rang_bloc.find("span")
+            rang_text = span.get_text(strip=True) if span else ""
+            if rang_text.isdigit():
+                rang = int(rang_text)
+
+        resultat[tableau] = {
+            "points": float(points_text) if points_text else None,
+            "classement": badge.get_text(strip=True) if badge else None,
+            "rang": rang,
+        }
+    return resultat
+
+
 def _parse_score(score_table, mine_idx):
     """Table de score (data-testid='row-details-score') -> (sets_gagnes,
     sets_perdus, sets_detail) du point de vue de mon côté (mine_idx, 0 ou 1

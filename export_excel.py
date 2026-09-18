@@ -221,6 +221,26 @@ def _degrade_diverge(ws, col_idx, first_row, last_row):
     ws.conditional_formatting.add(plage, couleurs)
 
 
+def _degrade_diverge_multi(ws, col_idx_debut, col_idx_fin, first_row, last_row):
+    """Comme _degrade_diverge, mais sur PLUSIEURS colonnes adjacentes à la
+    fois avec une seule échelle min/max commune, plutôt qu'une échelle
+    propre à chaque colonne - pour Gain tableau S/D/M : les 3 colonnes
+    partagent la même unité (nombre de tableaux gagnés/perdus) et on veut
+    pouvoir les comparer entre elles d'un coup d'oeil, pas seulement
+    chaque joueur contre lui-même sur une seule discipline."""
+    if last_row < first_row:
+        return
+    col_debut = get_column_letter(col_idx_debut)
+    col_fin = get_column_letter(col_idx_fin)
+    plage = f"{col_debut}{first_row}:{col_fin}{last_row}"
+    couleurs = ColorScaleRule(
+        start_type="min", start_color="FFE74C3C",
+        mid_type="num", mid_value=0, mid_color="FFFFFFFF",
+        end_type="max", end_color="FF63BE7B",
+    )
+    ws.conditional_formatting.add(plage, couleurs)
+
+
 def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
     """Classements colorés par tableau, dégradé de performance sur les
     autres colonnes numériques (divergent pour les diffs, barre verte pour
@@ -233,6 +253,10 @@ def _appliquer_mise_en_forme(ws, headers, first_row, last_row):
             _colorer_ordre_tableau(ws, idx, first_row, last_row)
         elif header in TEXT_HEADERS:
             pass
+        elif header == "Gain tableau S":
+            _degrade_diverge_multi(ws, idx, idx + 2, first_row, last_row)
+        elif header in ("Gain tableau D", "Gain tableau M"):
+            pass  # déjà colorées avec "Gain tableau S" ci-dessus (échelle commune)
         elif _est_colonne_delta_partenaire(header):
             _barre_verte(ws, idx, first_row, last_row)
         elif _est_colonne_diff(header):

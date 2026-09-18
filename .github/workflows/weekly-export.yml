@@ -64,7 +64,13 @@ jobs:
         env:
           MYFFBAD_LICENCE: ${{ secrets.MYFFBAD_LICENCE }}
           MYFFBAD_PASSWORD: ${{ secrets.MYFFBAD_PASSWORD }}
-        run: python statsJoueurs.py
+        # -u : sortie non bufferisée - sans ça, stdout n'étant pas un
+        # terminal en CI, Python bufferise tout et les logs (statut par
+        # joueur, résumé) ne remontent qu'à la toute fin du run, voire pas
+        # du tout s'il timeout avant - rendant impossible de suivre la
+        # progression ou de diagnostiquer où ça bloque pendant les ~30 min
+        # du run complet.
+        run: python -u statsJoueurs.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
