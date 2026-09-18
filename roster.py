@@ -65,6 +65,21 @@ def new_session():
     return session
 
 
+def _est_prive(row, cell_nom):
+    """RGPD : un joueur ayant rendu son profil privé apparaît quand même
+    dans "les tops" (classement public), mais sans lien cliquable vers sa
+    page, et avec un dernier <td> contenant un <span> "Voir le joueur"
+    désactivé (class contient "cursor-not-allowed", title mentionne RGPD)
+    à la place du lien habituel - vérifié sur les données réelles du club :
+    les deux signaux coïncident systématiquement. Autant le détecter ici,
+    sur cette page PUBLIQUE (pas besoin de connexion), que de le découvrir
+    plus tard en tentant (et en payant le coût) de charger sa page
+    /joueur/<licence> avec Selenium rien que pour se faire rediriger."""
+    if cell_nom.find("a") is not None:
+        return False
+    return row.find("span", attrs={"class": lambda c: c and "cursor-not-allowed" in c}) is not None
+
+
 def fetch_discipline(session, discipline_id):
     """Récupère la liste des joueurs du club pour une discipline (top complet du club)."""
     response = session.get(TOPS_URL, params={
@@ -95,6 +110,7 @@ def fetch_discipline(session, discipline_id):
             "Rang": int(rang) if rang else None,  # position dans le club pour ce tableau (1, 2, 3...)
             "Classement": classement,
             "Points": float(points) if points else None,
+            "Prive": _est_prive(row, cells[3]),
         }
     return players
 
@@ -158,6 +174,18 @@ def build_players(session):
     joueurs = fetch_club_roster(session)
     by_discipline = {d: fetch_discipline(session, d) for d in DISCIPLINES}
 
+    # un joueur privé (voir _est_prive) peut apparaître avec Classement=None
+    # dans une discipline (jeune non classé) et donc être ignoré par la
+    # fusion classement/points ci-dessous : on récupère le statut "privé"
+    # séparément, sur toutes les listes où il apparaît, plutôt que de
+    # dépendre de cette fusion.
+    licences_privees = {
+        licence
+        for infos_discipline in by_discipline.values()
+        for licence, infos in infos_discipline.items()
+        if infos.get("Prive")
+    }
+
     players = {}
 
     # 1) référence pour Nom/Sexe/lettre : tous les licenciés du club
@@ -192,10 +220,11 @@ def build_players(session):
 
     # 3) tableaux toujours pas renseignés (absent des deux, ou absent d'un
     # seul des 3 tableaux) -> valeurs par défaut (pas de rang connu)
-    for player in players.values():
+    for licence, player in players.items():
         for tableau in ("Simple", "Double", "Mixte"):
             player["Classement Actuel"].setdefault(tableau, DEFAULT_CLASSEMENT)
             player["Points Actuel"].setdefault(tableau, DEFAULT_POINTS)
             player["Rang Actuel"].setdefault(tableau, None)
+        player["Prive"] = licence in licences_privees
 
     return list(players.values())

@@ -114,11 +114,27 @@ def expand_all_sections(driver):
 def expand_section_by_text(driver, texte):
     """Déplie UN SEUL panneau repliable dont le libellé contient `texte`,
     sans toucher aux autres (plus rapide que expand_all_sections quand on
-    n'a besoin que d'un panneau précis, ex: "Évolution classement" sur la
+    n'a besoin que d'un panneau précis, ex: "historique classement" sur la
     page classement-historique, qui contient aussi Résultats/Progression
-    qu'on n'a pas besoin d'ouvrir sur cette page)."""
+    qu'on n'a pas besoin d'ouvrir sur cette page).
+
+    Comparaison insensible à la casse (défensif - le site n'est pas
+    toujours cohérent sur la capitalisation de ses libellés, ex: un É
+    majuscule ici, un é minuscule ailleurs pour un concept similaire).
+
+    Piège identifié sur ce site précis : le libellé affiché d'un panneau
+    ne correspond pas forcément à son data-testid ni au nom "logique" de
+    la donnée qu'il contient - le tableau data-testid='player-classement-
+    evolution' (classement/cote au fil du temps) est caché derrière un
+    panneau labellisé "historique classement", pas "Évolution classement"
+    (un panneau différent, sans rapport, qui existe aussi sur la page) -
+    confirmé en inspectant le DOM réel avec l'utilisateur : chercher le
+    mauvais texte le laissait fermé/vide en permanence, sans erreur,
+    quel que soit le budget de retry alloué. À vérifier au cas par cas
+    plutôt que de supposer que le libellé suit le nom de la donnée."""
+    cible = texte.lower()
     for item in driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']"):
-        if texte in (item.get_attribute("textContent") or ""):
+        if cible in (item.get_attribute("textContent") or "").lower():
             click(driver, item)
             return True
     return False
@@ -272,7 +288,7 @@ def _filtrer_saison_courante(events):
     return [e for e in events if stats.parse_date_fr(e["date"]) >= debut_saison]
 
 
-def _stabilise(lire, taille, tentatives=6, pause=0.5):
+def _stabilise(lire, taille, tentatives=6, pause=0.5, accepter_zero_stable=True):
     """Interroge `lire()` (une capture de l'état actuel du DOM) plusieurs
     fois de suite jusqu'à ce que deux lectures consécutives donnent la même
     `taille(valeur)`, ou jusqu'à `tentatives` lectures - le rendu React a
@@ -282,13 +298,29 @@ def _stabilise(lire, taille, tentatives=6, pause=0.5):
     peut apparaître avec quelques lignes puis continuer à se remplir en
     plusieurs vagues, pas juste "vide" puis "tout d'un coup". C'est ce qui
     causait des résultats partiels (pas seulement des joueurs entièrement
-    vides, déjà corrigé séparément) pour pas mal de joueurs."""
+    vides, déjà corrigé séparément) pour pas mal de joueurs.
+
+    accepter_zero_stable=False : n'accepte jamais "stable à 0" comme fini,
+    insiste jusqu'à épuisement de `tentatives` même si ça reste à 0 - "stable
+    à 0" n'est pas la même chose que "stable, rendu terminé" : un panneau
+    qui n'a pas encore commencé à se remplir renvoie 0 deux lectures de
+    suite tout autant qu'un panneau réellement vide. Ce mode existe pour
+    des panneaux SANS garde-fou de chargement en amont (voir
+    _parse_evolution_with_retry, seul appelant à passer False) : sans lui,
+    la boucle sortait dès la 2e lecture (~une seule pause) sans jamais
+    utiliser le reste du budget. Par défaut (True) on accepte "stable à 0"
+    dès la 2e lecture identique, ce qui reste correct pour les panneaux
+    protégés par charger_tous_les_resultats en amont (Résultats, Journal de
+    suivi) - une discipline réellement non jouée par un joueur (fréquent,
+    ex: pas de Mixte) y est aussi fréquente qu'un panneau pas encore rendu,
+    donc insister jusqu'au bout du budget à chaque fois ralentirait
+    sensiblement le run complet du club pour rien."""
     valeur = None
     precedente = -1
     for i in range(tentatives):
         valeur = lire()
         actuelle = taille(valeur)
-        if actuelle == precedente:
+        if actuelle == precedente and (accepter_zero_stable or actuelle != 0):
             return valeur
         precedente = actuelle
         if i < tentatives - 1:
@@ -316,20 +348,21 @@ def _parse_results_with_retry(driver, mon_nom=None, tentatives=6, pause=0.5):
 
 
 def _parse_evolution_with_retry(driver, tentatives=10, pause=1):
-    """Même principe que _parse_results_with_retry, pour le panel Évolution
-    classement - mais avec un budget plus généreux (10s au lieu de 3s) : ce
-    panneau n'a pas de garde-fou "Voir plus" en amont (charger_tous_les_
-    resultats) comme Résultats/Journal de suivi, donc toute la robustesse
-    contre un rendu lent repose uniquement sur cette boucle. Constaté :
-    revient vide pour TOUS les joueurs sur le runner CI (GitHub Actions),
-    alors qu'un dump --debug pris en local au même moment fonctionne très
-    bien - la page charge, mais visiblement pas assez vite pour un budget
-    de 3s sous CI, symptôme identique à l'incident CLICK_PAUSE=0.4s
-    (sous-provisionner le temps d'attente perd des données en silence)."""
+    """Même principe que _parse_results_with_retry, pour le panel "historique
+    classement" (data-testid='player-classement-evolution') - avec un budget
+    plus généreux (jusqu'à 10s) ET accepter_zero_stable=False : ce panneau
+    n'a pas de garde-fou "Voir plus" en amont (charger_tous_les_resultats)
+    comme Résultats/Journal de suivi, donc toute la robustesse contre un
+    rendu lent repose uniquement sur cette boucle - contrairement aux
+    disciplines Résultats/Journal, "vide" n'est pas un résultat normal ici
+    (l'historique de classement existe toujours pour un joueur licencié),
+    donc insister jusqu'au bout du budget avant d'accepter 0 est justifié
+    (un seul appel par joueur, pas ×3 disciplines - l'impact sur la durée
+    totale du run reste limité)."""
     return _stabilise(
         lambda: results.parse_classement_evolution(_soup(driver)),
         len,
-        tentatives, pause)
+        tentatives, pause, accepter_zero_stable=False)
 
 
 def _parse_journal_with_retry(driver, tentatives=6, pause=0.5):
@@ -393,8 +426,14 @@ def scrape_player(driver, player):
     au 1er septembre (page classement-historique, panel "Évolution
     classement" - identique quel que soit l'état des boutons Simple/Double/
     Mixte). Complète player["Classement 1er septembre"]/["Journal cote"] et
-    renvoie events_par_tableau (voir stats.build_tournois). Lève JoueurPrive
-    si le joueur a rendu ses résultats privés."""
+    renvoie (events_par_tableau, nb_matchs_avant_filtre_saison) (voir
+    stats.build_tournois). Ce 2e élément permet à scrape_all de distinguer
+    "vraiment rien récupéré" (suspect, à retenter) de "des résultats
+    existent mais aucun depuis le 1er septembre" (confirmé, pas la peine de
+    retenter - constaté : un joueur avec un vrai historique mais 0 match
+    CETTE saison déclenchait quand même une retentative complète inutile,
+    coûteuse sur l'ensemble du run). Lève JoueurPrive si le joueur a rendu
+    ses résultats privés."""
     _charger_page_joueur(driver, f"https://myffbad.fr/joueur/{player['Licence']}")
 
     # panneau "Résultats" (Ratio victoires/défaites et Progression ne sont
@@ -436,7 +475,12 @@ def scrape_player(driver, player):
     player["Journal cote"] = journal
 
     _charger_page_joueur(driver, f"https://myffbad.fr/joueur/{player['Licence']}/classement-historique")
-    expand_section_by_text(driver, "Évolution classement")
+    # le panneau repliable qui contient le tableau (data-testid='player-
+    # classement-evolution') s'appelle "historique classement" sur le site
+    # - PAS "Évolution classement" (un panneau différent et sans rapport,
+    # confirmé en inspectant le DOM réel avec l'utilisateur : celui-ci ne
+    # matchait jamais, laissant le tableau toujours fermé/vide).
+    expand_section_by_text(driver, "historique classement")
     evolution = _parse_evolution_with_retry(driver)
     player["Classement 1er septembre"] = results.find_september_1(evolution, _current_season_start_year())
 
@@ -458,8 +502,9 @@ def scrape_player(driver, player):
         if bloc.get("points") is not None:
             player["Points Actuel"][tableau] = bloc["points"]
 
+    nb_avant_filtre = _nb_matchs(events)
     events = {tableau: _filtrer_saison_courante(es) for tableau, es in events.items()}
-    return events
+    return events, nb_avant_filtre
 
 
 def _nb_matchs(events):
@@ -471,22 +516,34 @@ def scrape_all(driver, players, tentatives_si_vide=2):
     logs GitHub Actions (statut entre crochets - facile à repérer/grep) et
     un résumé en fin de run.
 
-    Un joueur "accessible" (page chargée) mais 0 match récupéré est
-    RETENTÉ en entier (nouvelle navigation + nouveau scrape complet, pas
-    juste une relecture du DOM déjà chargé - voir _stabilise pour ce
-    niveau-là, déjà en place) jusqu'à `tentatives_si_vide` fois avant
-    d'accepter : constaté que des joueurs ayant pourtant de vrais résultats
-    ressortaient encore vides malgré les filets de sécurité existants."""
+    Un joueur "accessible" (page chargée) mais 0 match récupéré CETTE
+    SAISON est RETENTÉ en entier (nouvelle navigation + nouveau scrape
+    complet, pas juste une relecture du DOM déjà chargé - voir _stabilise
+    pour ce niveau-là, déjà en place) jusqu'à `tentatives_si_vide` fois
+    avant d'accepter : constaté que des joueurs ayant pourtant de vrais
+    résultats ressortaient encore vides malgré les filets de sécurité
+    existants.
+
+    Sauf si le scrape a bel et bien trouvé des résultats AVANT le filtre
+    de saison (voir scrape_player, nb_avant_filtre) : ça veut dire que la
+    page a été correctement chargée et lue, et que "0 match depuis le 1er
+    septembre" est un résultat exact, pas un raté de chargement - retenter
+    ne changerait rien et coûterait une navigation complète pour rien
+    (constaté : un joueur avec un vrai historique de la saison précédente
+    mais pas encore joué cette saison déclenchait quand même une
+    retentative complète)."""
     all_stats = []
-    compteurs = {"ok": 0, "vide": 0, "prive": 0, "erreur": 0}
+    compteurs = {"ok": 0, "vide_confirme": 0, "vide": 0, "prive": 0, "erreur": 0}
     for i, player in enumerate(players, 1):
         print(f"[{i}/{len(players)}] {player['Nom']}...")
         try:
             events = None
             for tentative in range(tentatives_si_vide):
-                events = scrape_player(driver, player)
+                events, nb_avant_filtre = scrape_player(driver, player)
                 if _nb_matchs(events) > 0:
                     break
+                if nb_avant_filtre > 0:
+                    break  # confirmé vide CETTE saison (historique réel ailleurs) : pas la peine de retenter
                 if tentative < tentatives_si_vide - 1:
                     print(f"  [VIDE] 0 match récupéré, nouvelle tentative complète "
                           f"({tentative + 2}/{tentatives_si_vide})...")
@@ -496,6 +553,10 @@ def scrape_all(driver, players, tentatives_si_vide=2):
             if nb > 0:
                 print(f"  [OK] {nb} match(s)")
                 compteurs["ok"] += 1
+            elif nb_avant_filtre > 0:
+                print(f"  [VIDE CONFIRMÉ] {player['Nom']} : historique réel mais 0 match depuis "
+                      f"le 1er septembre - pas de retentative (résultat exact).")
+                compteurs["vide_confirme"] += 1
             else:
                 print(f"  [VIDE] {player['Nom']} (licence {player['Licence']}) : 0 match après "
                       f"{tentatives_si_vide} tentative(s) - à vérifier manuellement : "
@@ -508,7 +569,8 @@ def scrape_all(driver, players, tentatives_si_vide=2):
             print(f"  [ERREUR] {player['Nom']} (licence {player['Licence']}) : {e}")
             compteurs["erreur"] += 1
 
-    print(f"\nRésumé scraping : {compteurs['ok']} OK, {compteurs['vide']} vide(s) après retry, "
+    print(f"\nRésumé scraping : {compteurs['ok']} OK, {compteurs['vide_confirme']} vide(s) confirmé(s) "
+          f"(0 match cette saison, historique réel), {compteurs['vide']} vide(s) après retry (à vérifier), "
           f"{compteurs['prive']} privé(s), {compteurs['erreur']} erreur(s) sur {len(players)} joueur(s).")
     return all_stats
 
@@ -575,9 +637,15 @@ def check_collapse_hypothesis(licence_id):
         evo_avant = results.parse_classement_evolution(_soup(driver))
         print(f"Évolution classement AVANT clic : {len(evo_avant)} ligne(s)")
 
-        expand_section_by_text(driver, "Évolution classement")
-        evo_apres = results.parse_classement_evolution(_soup(driver))
-        print(f"Évolution classement APRES clic : {len(evo_apres)} ligne(s)")
+        print("Panneaux 'collapse-item' présents sur la page (avant tout clic) :")
+        for i, item in enumerate(driver.find_elements(By.CSS_SELECTOR, "div[data-testid='collapse-item']")):
+            label = (item.get_attribute("textContent") or "").strip()
+            print(f"  [{i}] {label[:120]!r}")
+
+        trouve = expand_section_by_text(driver, "historique classement")
+        print(f"expand_section_by_text('historique classement') a trouvé/cliqué un panneau : {trouve}")
+        evo_apres = _parse_evolution_with_retry(driver)
+        print(f"Évolution classement APRES clic (avec retry) : {len(evo_apres)} ligne(s)")
     finally:
         driver.quit()
 
@@ -607,6 +675,16 @@ def main(licence_filter):
         players = [p for p in players if joueur_est_eligible(p)]
         print(f"{len(players)} joueurs avec au moins un classement {SEUIL_TABLEAU_MIN} ou mieux "
               f"(sur {total} au total).")
+
+    # profil RGPD-privé détecté depuis "les tops" (page publique, voir
+    # roster._est_prive) : on sait déjà que /joueur/<licence> redirigera
+    # (voir JoueurPrive) - autant s'épargner la navigation Selenium plutôt
+    # que de le découvrir à la dure pour chacun d'eux.
+    nb_prive_roster = sum(1 for p in players if p.get("Prive"))
+    if nb_prive_roster:
+        print(f"{nb_prive_roster} joueur(s) déjà repéré(s) comme privé(s) via le roster, "
+              f"scraping Selenium sauté pour eux.")
+        players = [p for p in players if not p.get("Prive")]
 
     my_licence, my_password = get_credentials()
     driver = new_driver()
