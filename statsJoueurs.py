@@ -365,6 +365,21 @@ def _parse_evolution_with_retry(driver, tentatives=10, pause=1):
         tentatives, pause, accepter_zero_stable=False)
 
 
+def _parse_ranking_cards_with_retry(driver, tentatives=10, pause=1):
+    """Même principe que _parse_evolution_with_retry, pour les cartes
+    "Nombre de points / Classement" (voir results.parse_player_ranking_
+    cards) - même budget généreux et accepter_zero_stable=False : ces
+    cartes viennent d'apparaître suite au clic sur le panel juste avant,
+    et n'ont pas de garde-fou "Voir plus" en amont non plus. Oubli commis
+    une première fois (lecture unique sans retry) : revenait vide, donc
+    "Points Actuel"/"Classement Actuel" retombaient sur la valeur
+    évolution/roster au lieu de la valeur live visée."""
+    return _stabilise(
+        lambda: results.parse_player_ranking_cards(_soup(driver)),
+        len,
+        tentatives, pause, accepter_zero_stable=False)
+
+
 def _parse_journal_with_retry(driver, tentatives=6, pause=0.5):
     """Même principe que _parse_results_with_retry, pour le journal de suivi
     (voir results.parse_journal_complet)."""
@@ -465,7 +480,7 @@ def scrape_player(driver, player):
     # capturés tout de suite après le dépli du panel, avant les bascules
     # Journal de suivi/Double/Mixte ci-dessous (qui ne touchent que le
     # graphique, pas ces cartes) - voir results.parse_player_ranking_cards.
-    ranking_live = results.parse_player_ranking_cards(_soup(driver))
+    ranking_live = _parse_ranking_cards_with_retry(driver)
     click_buttons_by_text(driver, "Journal de suivi", container_testid="player-ranking-elo")
     charger_tous_les_resultats(driver, container_testid="player-ranking-elo")
     journal = {"Simple": _parse_journal_with_retry(driver)}
