@@ -198,6 +198,35 @@ def click_buttons_by_text(driver, text, container_testid=None):
     return n
 
 
+XPATH_BOUTON_JOURNAL = ("//div[@data-testid='player-ranking-elo']"
+                        "//button[@data-testid='button'][normalize-space(.)='Journal de suivi']")
+
+
+def _activer_journal_de_suivi(driver, timeout=15):
+    """Bascule le panel "Nombre de points / Classement" en vue tableau.
+    Le panneau "Évolution classement" qui le contient doit déjà être déplié
+    (voir scrape_player). Attend que le bouton "Journal de suivi" existe
+    avant de cliquer (rendu du bloc graphique Highcharts potentiellement
+    lent), et que le tableau apparaisse après le clic. True si le clic a eu
+    lieu."""
+    sections = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='player-ranking-elo']")
+    if sections:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", sections[0])
+    try:
+        bouton = WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.XPATH, XPATH_BOUTON_JOURNAL)))
+    except TimeoutException:
+        return False
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", bouton)
+    click(driver, bouton)
+    try:
+        WebDriverWait(driver, timeout).until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "div[data-testid='player-ranking-elo'] [data-testid='table']")))
+    except TimeoutException:
+        print("  'Journal de suivi' cliqué mais le tableau n'est pas apparu.")
+    return True
+
+
 def charger_tous_les_resultats(driver, container_testid="player-results", max_clics=30):
     """Le panneau Résultats n'affiche que les ~10 événements les plus
     récents par défaut, avec un bouton "Voir plus" qui charge un lot
@@ -399,13 +428,23 @@ def _parse_ranking_cards_with_retry(driver, tentatives=10, pause=1):
         tentatives, pause, accepter_zero_stable=False)
 
 
-def _parse_journal_with_retry(driver, tentatives=6, pause=0.5):
-    """Même principe que _parse_results_with_retry, pour le journal de suivi
-    (voir results.parse_journal_complet)."""
+def _parse_journal_with_retry(driver, tentatives=10, pause=1):
+    """Même principe que _parse_evolution_with_retry, pour le journal de
+    suivi (voir results.parse_journal_complet) - budget généreux ET
+    accepter_zero_stable=False : constaté sur un run complet, le journal
+    revenait vide pour TOUS les joueurs et les 3 tableaux (Cote min/max/
+    moyenne, Stabilité, Diff cote mensuelle et Pics/chutes tous vides) avec
+    l'ancien réglage (0.5s, "stable à 0" accepté dès la 2e lecture) : le
+    tableau n'est rendu qu'après le chargement des données suite au clic
+    "Journal de suivi", bien après la 2e lecture. Un journal réellement vide
+    n'arrive pas en pratique (il commence toujours par la ligne
+    "Initialisation saison", même pour un tableau non joué - vérifié sur
+    les dumps de debug/), donc insister jusqu'au bout du budget ne coûte
+    rien dans le cas normal."""
     return _stabilise(
         lambda: results.parse_journal_complet(_soup(driver)),
         len,
-        tentatives, pause)
+        tentatives, pause, accepter_zero_stable=False)
 
 
 class JoueurPrive(Exception):
@@ -488,19 +527,29 @@ def scrape_player(driver, player):
     charger_tous_les_resultats(driver)
     events["Mixte"] = _parse_results_with_retry(driver, player["Nom"])
 
-    # panneau "Nombre de points / Classement", basculé en mode tableau
-    # ("Journal de suivi") : historique (en général hebdomadaire) de la cote
-    # sur la saison - plus fin que l'évolution de classement ci-dessous (qui
-    # n'a que quelques points de mesure), sert aux stats min/max/moyenne de
-    # cote. Le bouton "Voir plus" y existe potentiellement aussi (même
-    # composant que pour Résultats) - même garde-fou par précaution.
+    # cote/classement/rang fédéral LIVE (cartes "player-ranking-card",
+    # panneau "Nombre de points / Classement") - voir results.
+    # parse_player_ranking_cards.
     expand_section_by_text(driver, "Nombre de points / Classement")
-    # cote/classement/rang fédéral LIVE (cartes "player-ranking-card"),
-    # capturés tout de suite après le dépli du panel, avant les bascules
-    # Journal de suivi/Double/Mixte ci-dessous (qui ne touchent que le
-    # graphique, pas ces cartes) - voir results.parse_player_ranking_cards.
     ranking_live = _parse_ranking_cards_with_retry(driver)
-    click_buttons_by_text(driver, "Journal de suivi", container_testid="player-ranking-elo")
+
+    # journal de suivi de la cote (data-testid='player-ranking-elo'),
+    # basculé en mode tableau ("Journal de suivi") : historique (en général
+    # hebdomadaire) de la cote sur la saison - plus fin que l'historique de
+    # classement ci-dessous (qui n'a que quelques points de mesure), sert
+    # aux stats min/max/moyenne de cote. ATTENTION : sur la page principale
+    # il est dans le panneau "Évolution classement", PAS dans "Nombre de
+    # points / Classement" (qui ne contient que les cartes ci-dessus) -
+    # vérifié dans l'ordre du DOM des dumps de debug/. Ce panneau étant fermé
+    # par défaut, le bouton "Journal de suivi" n'existait jamais et le
+    # journal revenait vide pour tout le club. (À ne pas confondre avec le
+    # panneau "historique classement" de la page classement-historique, plus
+    # bas.) Le bouton "Voir plus" y existe potentiellement aussi (même
+    # composant que pour Résultats) - même garde-fou par précaution.
+    expand_section_by_text(driver, "Évolution classement")
+    if not _activer_journal_de_suivi(driver):
+        print("  bouton 'Journal de suivi' introuvable : cote min/max/mensuelle reconstruite "
+              "à partir des points de cote des matchs (voir stats.journal_depuis_matchs).")
     charger_tous_les_resultats(driver, container_testid="player-ranking-elo")
     journal = {"Simple": _parse_journal_with_retry(driver)}
 

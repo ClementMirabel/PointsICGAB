@@ -43,11 +43,30 @@ FILL_TITRE_BLOC = _uni("FFD9D9D9")  # gris un peu plus soutenu, pour le titre d'
 FONT_GRAS = Font(bold=True)
 
 
-def _styliser_ligne(ws, row, last_col, fill=FILL_ENTETE, gras=True):
+def _ligne_vide(ws):
+    """Ligne vide de séparation entre deux blocs. Pas ws.append([]) : ça
+    n'écrit aucune cellule, donc ws.max_row ne bouge pas, et le
+    "titre_row = ws.max_row + 1" calculé juste après pointait sur cette
+    ligne vide au lieu du titre (le fond gris du titre se retrouvait une
+    ligne trop haut, au-dessus du texte)."""
+    ws.cell(row=ws.max_row + 1, column=1)
+
+
+def _styliser_ligne(ws, row, last_col, fill=FILL_ENTETE, gras=True, entete=None):
     """Gras + fond gris sur une ligne (colonnes 1..last_col) - sans ça, une
     ligne d'en-tête ou de titre ne se distingue pas visuellement d'une
     ligne de données, ce qui rend un onglet à plusieurs tableaux empilés
-    difficile à lire (pas de repère pour savoir où un bloc commence)."""
+    difficile à lire (pas de repère pour savoir où un bloc commence).
+
+    entete : ligne de noms de colonnes (par défaut : oui avec le fond
+    FILL_ENTETE, non sinon) - mémorisée pour _ajuster_largeurs_colonnes,
+    qui renvoie à la ligne les en-têtes bien plus longs que leur contenu."""
+    if entete is None:
+        entete = fill is FILL_ENTETE
+    if entete:
+        if not hasattr(ws, "lignes_entete"):
+            ws.lignes_entete = set()
+        ws.lignes_entete.add(row)
     for col in range(1, last_col + 1):
         cell = ws.cell(row=row, column=col)
         if gras:
@@ -80,6 +99,46 @@ def _encadrer_bloc(ws, first_row, last_row, last_col):
                 bottom=BORDURE_LEGERE if row == last_row else border.bottom,
             )
 
+FILL_NOTE = _uni("FFFFF8DC")  # jaune très pâle, pour les encadrés "Comment lire"
+
+# encadrés explicatifs : NB_COLONNES_NOTE colonnes fusionnées, à partir de
+# COLONNE_NOTE_MINI_TABLEAUX pour les mini-tableaux empilés (tous à la même
+# hauteur de colonne, alignés les uns sous les autres - les mini-tableaux
+# font au plus 8 colonnes, donc jamais de chevauchement)
+NB_COLONNES_NOTE = 6
+COLONNE_NOTE_MINI_TABLEAUX = 10
+CARACTERES_PAR_LIGNE_NOTE = 90  # estimation grossière, pour la hauteur de ligne
+
+
+def _ajouter_note(ws, first_row, last_row, first_col, texte, nb_cols=NB_COLONNES_NOTE):
+    """Encadré "Comment lire" à droite d'un tableau : cellules fusionnées
+    (first_col..first_col+nb_cols-1, first_row..last_row), texte à la ligne
+    automatique, fond jaune pâle. Si le texte ne tient pas dans la hauteur
+    du tableau (Excel n'ajuste jamais seul la hauteur d'une zone
+    fusionnée), on agrandit les lignes de ce bloc plutôt que d'étendre la
+    note vers le bas, où elle déborderait sur le tableau suivant."""
+    last_col = first_col + nb_cols - 1
+    ws.merge_cells(start_row=first_row, start_column=first_col, end_row=last_row, end_column=last_col)
+    cell = ws.cell(row=first_row, column=first_col, value=texte)
+    cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
+    cell.font = Font(size=9)
+    cell.fill = FILL_NOTE
+    _encadrer_groupe(ws, first_col, last_col, first_row, last_row, side=BORDURE_LEGERE)
+    # cellule exclue de l'ajustement auto de largeur (voir
+    # _ajuster_largeurs_colonnes) : son texte s'étale sur plusieurs colonnes
+    if not hasattr(ws, "cellules_notes"):
+        ws.cellules_notes = set()
+    ws.cellules_notes.add(cell.coordinate)
+
+    nb_lignes_texte = sum(max(1, -(-len(par) // CARACTERES_PAR_LIGNE_NOTE)) for par in texte.split("\n"))
+    hauteur_necessaire = nb_lignes_texte * 12 + 6
+    nb_rows = last_row - first_row + 1
+    if hauteur_necessaire > nb_rows * 15:
+        hauteur = -(-hauteur_necessaire // nb_rows)
+        for row in range(first_row, last_row + 1):
+            ws.row_dimensions[row].height = hauteur
+
+
 # ordre tableau : une couleur par combinaison (pas juste par discipline en
 # tête) - même famille de teinte selon la discipline en tête (vert=Simple,
 # bleu=Double, orange=Mixte), une nuance plus soutenue pour la 2e place.
@@ -101,6 +160,7 @@ ORDRE_TABLEAU_COULEURS = {
 
 BORDURE_GROUPE = Side(style="thick", color="FF999999")
 BORDURE_LEGERE = Side(style="thin", color="FFCCCCCC")
+BORDURE_SOUS_GROUPE = Side(style="medium", color="FFAAAAAA")
 
 # colonnes texte qu'on ne colore pas en dégradé (déjà colorées autrement,
 # ou pas un indicateur de performance)
@@ -285,7 +345,7 @@ def _grouper(headers, *paires):
     return groupes
 
 
-def _encadrer_groupe(ws, first_col, last_col, first_row, last_row):
+def _encadrer_groupe(ws, first_col, last_col, first_row, last_row, side=BORDURE_GROUPE):
     """Bordure épaisse autour d'un bloc de colonnes (première ligne =
     en-tête, y compris la/les ligne(s) de sur-en-tête s'il y en a) - aide à
     repérer visuellement les groupes de colonnes apparentées (classement/
@@ -297,27 +357,25 @@ def _encadrer_groupe(ws, first_col, last_col, first_row, last_row):
             cell = ws.cell(row=row, column=col)
             border = cell.border
             cell.border = Border(
-                left=BORDURE_GROUPE if col == first_col else border.left,
-                right=BORDURE_GROUPE if col == last_col else border.right,
-                top=BORDURE_GROUPE if row == first_row else border.top,
-                bottom=BORDURE_GROUPE if row == last_row else border.bottom,
+                left=side if col == first_col else border.left,
+                right=side if col == last_col else border.right,
+                top=side if row == first_row else border.top,
+                bottom=side if row == last_row else border.bottom,
             )
 
 
-def _lignes_legeres(ws, headers, noms_colonnes, first_row, last_row):
-    """Trait fin sur le bord gauche de chacune des colonnes nommées, de
-    first_row à last_row - divise des sous-groupes à l'intérieur d'un même
-    bloc thématique (ex: Classement septembre vs Classement actuel), plus
-    discret que la bordure épaisse qui encadre le bloc entier."""
-    if last_row < first_row:
-        return
-    for nom in noms_colonnes:
-        col_idx = headers.index(nom) + 1
-        for row in range(first_row, last_row + 1):
-            cell = ws.cell(row=row, column=col_idx)
-            border = cell.border
-            cell.border = Border(left=BORDURE_LEGERE, right=border.right,
-                                  top=border.top, bottom=border.bottom)
+def _encadrer_groupes(ws, headers, niveau1, niveau2, last_row):
+    """Encadre chaque sous-groupe niveau2 (bordure moyenne, de la ligne 2 à
+    la dernière ligne de données) PUIS chaque groupe niveau1 (bordure
+    épaisse, depuis la ligne 1) - dans cet ordre pour que la bordure
+    épaisse d'un grand thème ne soit pas écrasée là où elle coïncide avec
+    celle d'un sous-groupe. Sans les sous-groupes, un thème large (ex:
+    "Faits marquants" = 5 faits x 3-4 colonnes) se lisait comme un seul mur
+    de colonnes, sans repère pour savoir où s'arrête la contre-perf."""
+    for c0, c1 in _grouper(headers, *[(g[1], g[2]) for g in niveau2]):
+        _encadrer_groupe(ws, c0, c1, 2, last_row, side=BORDURE_SOUS_GROUPE)
+    for c0, c1 in _grouper(headers, *[(g[1], g[2]) for g in niveau1]):
+        _encadrer_groupe(ws, c0, c1, 1, last_row)
 
 
 def _ajouter_filtre(ws, nb_colonnes, header_row, last_row):
@@ -487,7 +545,22 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             ("Meilleur partenaire au club", "Meilleur partenaire au club (si différent)",
              "Points cote marqués ensemble (club)"),
         ]
-    header_row = _ecrire_sur_entete(ws, headers, niveau1)
+    niveau2 = [
+        ("Cote adv. moy.", "Cote adverse moyenne", "Cote adverse moyenne"),
+        ("Meilleure victoire", "Meilleure victoire", "Meilleure victoire (score)"),
+        ("Pire défaite", "Pire défaite", "Pire défaite (score)"),
+        ("Plus grosse perf", "Plus grosse perf", "Plus grosse perf (score)"),
+        ("Plus grosse contre-perf", "Plus grosse contre-perf", "Plus grosse contre-perf (score)"),
+        ("Plus gros écart de cote", "Plus gros écart de cote", "Score (écart max)"),
+        ("Clutch", "Sets serrés joués", "Diff clutch (%)"),
+    ]
+    if has_partner:
+        niveau2 += [
+            ("Avec", "Matchs avec partenaire club", "% avec partenaire club"),
+            ("Sans", "Matchs sans partenaire club", "% sans partenaire club"),
+            ("Delta", "Delta % (avec - sans)", "Delta % (avec - sans)"),
+        ]
+    header_row = _ecrire_sur_entete(ws, headers, niveau1, niveau2)
     ws.append(headers)
     _styliser_ligne(ws, header_row, len(headers))
     ws.freeze_panes = f"B{header_row + 1}"
@@ -530,10 +603,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
-
-    groupes = [(g[1], g[2]) for g in niveau1]
-    for c0, c1 in _grouper(headers, *groupes):
-        _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
+    _encadrer_groupes(ws, headers, niveau1, niveau2, ws.max_row)
     _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
 
     # --- matchs joués par mois + % de victoire, pour ce tableau ---
@@ -541,7 +611,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     # chevaucher une colonne de données, quelle que soit sa largeur.
     par_mois = _matchs_par_mois_tableau(all_stats, tableau, sexe)
     if par_mois:
-        ws.append([])
+        _ligne_vide(ws)
         titre_row = ws.max_row + 1
         ws.append([f"Matchs par mois ({title})"])
         mois_header_row = ws.max_row + 1
@@ -736,17 +806,20 @@ def _write_bilan_sheet(wb, all_stats):
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
-
-    for c0, c1 in _grouper(headers, *[(g[1], g[2]) for g in niveau1]):
-        _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
-
-    _lignes_legeres(ws, headers, ["Classement actuel S"], 2, ws.max_row)
-    _lignes_legeres(ws, headers, ["Place actuelle S", "Gain places S"], 2, ws.max_row)
-    _lignes_legeres(ws, headers,
-                     ["Cote actuelle S", "Diff cote S", "Tendance cote S (pts/semaine)"], 2, ws.max_row)
+    _encadrer_groupes(ws, headers, niveau1, niveau2, ws.max_row)
 
     _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
     return ws
+
+
+_NOTE_DYNAMIQUE = (
+    "COMMENT LIRE\n"
+    "Matchs d'au moins 2 sets, forfaits exclus.\n"
+    "Taux propre : parmi les matchs gagnés, % gagnés sans perdre un seul set.\n"
+    "Taux après 1er set gagné : quand on gagne le 1er set, % de matchs gagnés au final "
+    "(capacité à conclure).\n"
+    "Taux comeback : quand on perd le 1er set, % de matchs gagnés quand même "
+    "(capacité à revenir).")
 
 
 # ----------------------------------------------------------------- Tournois
@@ -805,7 +878,7 @@ def _write_tournois_sheet(wb, all_stats):
     ws.freeze_panes = "B2"
 
     # --- tableau + graphique club par mois ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Par mois (club)"])
     mois_header_row = ws.max_row + 1
@@ -830,7 +903,7 @@ def _write_tournois_sheet(wb, all_stats):
     _styliser_mini_tableau(ws, titre_row, mois_header_row, mois_last_row, 4)
 
     # --- distribution : nombre de joueurs par nombre de tournois individuels ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Joueurs par nombre de tournois individuels"])
     dist_header_row = ws.max_row + 1
@@ -920,15 +993,23 @@ def _write_club_sheet(wb, all_stats):
                 _add(mois, tableau[0] + _GENRE_CODE[sexe], m)  # SH/SD/DH/DD
                 _add(mois, f"{tableau[0]} (unisexe)", m)  # S/D (unisexe)
 
+    # une colonne par catégorie (matchs/victoires/%), y compris le total
+    # club, avec sous les mois 3 lignes de synthèse sur toute la saison :
+    # Total, Interclubs, et Diff interclub (% interclub - % total : choke si
+    # négatif, overperform si positif - le total inclut déjà l'interclub,
+    # une comparaison contre le hors-interclub serait plus "pure", mais
+    # total vs interclub est ce qui a été demandé). Avant, ces totaux
+    # étaient dans un mini-tableau séparé plus bas, peu pratique à mettre en
+    # regard des mois.
     header = ["Mois"]
-    for cat in CLUB_CATEGORIES:
+    for cat in toutes_categories:
         header += [f"{cat} - matchs", f"{cat} - victoires", f"{cat} - %"]
     ws.append(header)
 
     mois_tries = sorted(par_mois)
     for mois in mois_tries:
         row = [mois]
-        for cat in CLUB_CATEGORIES:
+        for cat in toutes_categories:
             b = par_mois[mois][cat]
             pct = (b["victoires"] / b["joues"] * 100) if b["joues"] else 0.0
             row += [b["joues"], b["victoires"], _pct(pct)]
@@ -936,12 +1017,53 @@ def _write_club_sheet(wb, all_stats):
 
     header_row = 1
     first_row = 2
-    last_row = ws.max_row
+    last_row = ws.max_row  # dernière ligne de mois (le graphique et le dégradé s'arrêtent là)
     _appliquer_mise_en_forme(ws, header, first_row, last_row)
-    _ajouter_filtre(ws, len(header), header_row, last_row)
     _styliser_ligne(ws, header_row, len(header))
     ws.freeze_panes = f"B{first_row}"
 
+    def _pct_ou_none(b):
+        return (b["victoires"] / b["joues"] * 100) if b["joues"] else None
+
+    ligne_total, ligne_ic, ligne_diff = ["Total saison"], ["Interclubs"], ["Diff interclub (%)"]
+    for cat in toutes_categories:
+        t, ic = par_categorie[cat]["total"], par_categorie[cat]["interclub"]
+        pct_t, pct_ic = _pct_ou_none(t), _pct_ou_none(ic)
+        diff = (pct_ic - pct_t) if pct_t is not None and pct_ic is not None else None
+        ligne_total += [t["joues"], t["victoires"], round(pct_t, 1) if pct_t is not None else None]
+        ligne_ic += [ic["joues"], ic["victoires"], round(pct_ic, 1) if pct_ic is not None else None]
+        ligne_diff += [None, None, round(diff, 1) if diff is not None else None]
+    for ligne in (ligne_total, ligne_ic, ligne_diff):
+        ws.append(ligne)
+        _styliser_ligne(ws, ws.max_row, len(header), fill=FILL_ENTETE, entete=False)
+    total_row, diff_row = ws.max_row - 2, ws.max_row
+    for row in range(total_row, diff_row + 1):
+        for idx in range(4, len(header) + 1, 3):  # colonnes "%"
+            ws.cell(row=row, column=idx).number_format = '0.0"%"'
+    for idx in range(4, len(header) + 1, 3):
+        cell = ws.cell(row=diff_row, column=idx)
+        if cell.value:
+            cell.font = Font(bold=True, color="FF27AE60" if cell.value > 0 else "FFE74C3C")
+    # trait de séparation entre les mois et les lignes de synthèse
+    for col in range(1, len(header) + 1):
+        cell = ws.cell(row=total_row, column=col)
+        b = cell.border
+        cell.border = Border(left=b.left, right=b.right, bottom=b.bottom, top=BORDURE_SOUS_GROUPE)
+
+    niveau_cat = [(cat, f"{cat} - matchs", f"{cat} - %") for cat in toutes_categories]
+    for c0, c1 in _grouper(header, *[(g[1], g[2]) for g in niveau_cat]):
+        _encadrer_groupe(ws, c0, c1, header_row, ws.max_row, side=BORDURE_SOUS_GROUPE)
+    _ajouter_filtre(ws, len(header), header_row, last_row)
+    _ajouter_note(ws, header_row, ws.max_row, len(header) + 2,
+                  "COMMENT LIRE\n"
+                  "Une ligne par mois : matchs joués, victoires et % de victoire du club, par catégorie "
+                  "(les matchs entre deux joueurs du club sont exclus : ils donnent toujours 1 victoire "
+                  "+ 1 défaite et ne disent rien du niveau face à l'extérieur).\n"
+                  "Total saison : toute la saison. Interclubs : uniquement les matchs d'interclub.\n"
+                  "Diff interclub = % interclub - % total. Positif (vert) : le club gagne plus souvent "
+                  "en interclub qu'en moyenne. Négatif (rouge) : moins souvent.")
+
+    graphique = None
     if last_row >= first_row:
         bar = BarChart()
         bar.type = "col"
@@ -969,43 +1091,13 @@ def _write_club_sheet(wb, all_stats):
         line.set_categories(categories)
 
         bar += line
-        ws.add_chart(bar, f"B{last_row + 3}")
-
-    # --- total vs interclub uniquement, par catégorie ---
-    # "Diff interclub (%)" = choke (négatif) ou overperform (positif) en
-    # interclub par rapport au total (qui inclut déjà l'interclub - une
-    # comparaison contre le hors-interclub serait plus "pure", mais total
-    # vs interclub est ce qui a été demandé, et reste lisible tant que
-    # l'interclub n'est pas l'essentiel du volume de matchs).
-    ws.append([])
-    titre_row = ws.max_row + 1
-    ws.append(["Total vs interclub, par catégorie"])
-    ti_header_row = ws.max_row + 1
-    ti_headers = ["Catégorie", "Matchs (total)", "Victoires (total)", "% (total)",
-                  "Matchs (interclub)", "Victoires (interclub)", "% (interclub)", "Diff interclub (%)"]
-    ws.append(ti_headers)
-    ti_first_row = ws.max_row + 1
-
-    for cat in toutes_categories:
-        b = par_categorie[cat]
-        t, ic = b["total"], b["interclub"]
-        pct_t = (t["victoires"] / t["joues"] * 100) if t["joues"] else None
-        pct_ic = (ic["victoires"] / ic["joues"] * 100) if ic["joues"] else None
-        diff = (pct_ic - pct_t) if pct_t is not None and pct_ic is not None else None
-        ws.append([
-            cat, t["joues"], t["victoires"], round(pct_t, 1) if pct_t is not None else None,
-            ic["joues"], ic["victoires"], round(pct_ic, 1) if pct_ic is not None else None,
-            round(diff, 1) if diff is not None else None,
-        ])
-    ti_last_row = ws.max_row
-    _appliquer_mise_en_forme(ws, ti_headers, ti_first_row, ti_last_row)
-    _styliser_mini_tableau(ws, titre_row, ti_header_row, ti_last_row, len(ti_headers))
+        graphique = bar  # ancré tout en bas de l'onglet (voir fin de fonction)
 
     # --- points de cote gagnés/perdus, total vs interclub, par catégorie ---
     # "Diff interclub" (gagnés et perdus) : l'interclub rapporte/coûte-t-il
     # plus de points en moyenne qu'un match hors interclub - barème FFBad
     # différent en compétition par équipe ?
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Points de cote gagnés/perdus, par catégorie"])
     pc_header_row = ws.max_row + 1
@@ -1036,9 +1128,18 @@ def _write_club_sheet(wb, all_stats):
     pc_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, pc_headers, pc_first_row, pc_last_row)
     _styliser_mini_tableau(ws, titre_row, pc_header_row, pc_last_row, len(pc_headers))
+    _ajouter_note(ws, titre_row, pc_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Pts gagnés : nombre moyen de points de cote gagnés par victoire. "
+                  "Pts perdus : nombre moyen de points perdus par défaite (négatif).\n"
+                  "(total) = tous les matchs, tournois et interclubs confondus. "
+                  "(interclub) = mêmes moyennes sur les seuls matchs d'interclub.\n"
+                  "Diff = interclub - total. Ex : Diff gagnés = -3 → une victoire en interclub rapporte "
+                  "en moyenne 3 points de moins qu'une victoire en général. Diff perdus positif → une "
+                  "défaite en interclub coûte moins cher qu'ailleurs.")
 
     # --- dynamique de match club-wide, par catégorie ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Dynamique de match, par catégorie"])
     dy_header_row = ws.max_row + 1
@@ -1060,9 +1161,10 @@ def _write_club_sheet(wb, all_stats):
     dy_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, dy_headers, dy_first_row, dy_last_row)
     _styliser_mini_tableau(ws, titre_row, dy_header_row, dy_last_row, len(dy_headers))
+    _ajouter_note(ws, titre_row, dy_last_row, COLONNE_NOTE_MINI_TABLEAUX, _NOTE_DYNAMIQUE)
 
     # --- David vs Goliath, par catégorie ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["David vs Goliath, par catégorie (cote adverse vs la sienne)"])
     dvg_header_row = ws.max_row + 1
@@ -1082,9 +1184,15 @@ def _write_club_sheet(wb, all_stats):
     dvg_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, dvg_headers, dvg_first_row, dvg_last_row)
     _styliser_mini_tableau(ws, titre_row, dvg_header_row, dvg_last_row, len(dvg_headers))
+    _ajouter_note(ws, titre_row, dvg_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Outsider : l'adversaire avait une meilleure cote que nous au moment du match. "
+                  "Favori : c'est nous qui avions la meilleure cote. Forfaits exclus.\n"
+                  "% victoire en outsider élevé → le club crée souvent l'exploit.\n"
+                  "% victoire en favori bas → le club se fait souvent surprendre par moins bien classé.")
 
     # --- clutchness club-wide, par catégorie ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Clutchness club (sets à 2 points d'écart ou moins)"])
     clutch_header_row = ws.max_row + 1
@@ -1102,6 +1210,18 @@ def _write_club_sheet(wb, all_stats):
     clutch_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, clutch_headers, clutch_first_row, clutch_last_row)
     _styliser_mini_tableau(ws, titre_row, clutch_header_row, clutch_last_row, len(clutch_headers))
+    _ajouter_note(ws, titre_row, clutch_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Set serré : set terminé avec 2 points d'écart ou moins.\n"
+                  "% clutch : part des sets serrés gagnés.\n"
+                  "Diff clutch = % clutch - % de tous les sets gagnés. Positif → on gagne plus souvent "
+                  "les fins de set accrochées que d'habitude (sang-froid). Négatif → on les perd plus "
+                  "souvent. Vide si moins de 3 sets serrés joués.")
+
+    # sous le dernier mini-tableau plutôt que juste sous les mois : un
+    # graphique ancré au milieu de l'onglet recouvrait les mini-tableaux.
+    if graphique is not None:
+        ws.add_chart(graphique, f"B{ws.max_row + 3}")
 
     return ws
 
@@ -1116,6 +1236,13 @@ _METRIQUES_SCORE = ["Score moyen (moi)", "Score moyen (adversaire)", "Score max 
                      "Sets extrêmes joués", "Sets extrêmes gagnés",
                      "Taux propre (%)", "Taux après 1er set gagné (%)", "Taux comeback (%)"]
 _SUFFIXE_TABLEAU = {"Simple": "S", "Double": "D", "Mixte": "M"}
+# sous-groupes de _METRIQUES_SCORE (label, première métrique, dernière)
+_SOUS_GROUPES_SCORE = [
+    ("Scores", "Score moyen (moi)", "Score max reçu"),
+    ("Points moyens", "Points moyens (victoire)", "Points moyens (défaite)"),
+    ("Sets au plafond", "Sets extrêmes joués", "Sets extrêmes gagnés"),
+    ("Dynamique", "Taux propre (%)", "Taux comeback (%)"),
+]
 
 
 def _regrouper_dates_consecutives(dates):
@@ -1229,12 +1356,17 @@ def _pics_mensuels(all_stats):
             ]
             if not candidats:
                 continue
+            # un "pic" négatif ou une "chute" positive n'aurait pas de sens
+            # (ex: tout le monde a progressé ce mois-là) : on n'affiche que
+            # ce qui en est vraiment un.
             pic = max(candidats, key=lambda c: c[2])
             chute = min(candidats, key=lambda c: c[2])
-            resultat.append({"tableau": tableau, "sexe": sexe, "type": "Pic",
-                              "nom": pic[0], "mois": pic[1], "delta": pic[2]})
-            resultat.append({"tableau": tableau, "sexe": sexe, "type": "Chute",
-                              "nom": chute[0], "mois": chute[1], "delta": chute[2]})
+            if pic[2] > 0:
+                resultat.append({"tableau": tableau, "sexe": sexe, "type": "Pic",
+                                  "nom": pic[0], "mois": pic[1], "delta": pic[2]})
+            if chute[2] < 0:
+                resultat.append({"tableau": tableau, "sexe": sexe, "type": "Chute",
+                                  "nom": chute[0], "mois": chute[1], "delta": chute[2]})
     return resultat
 
 
@@ -1249,7 +1381,10 @@ def _write_stats_avancees_sheet(wb, all_stats):
     niveau1 = [(tableau, f"{_METRIQUES_SCORE[0]} {_SUFFIXE_TABLEAU[tableau]}",
                 f"{_METRIQUES_SCORE[-1]} {_SUFFIXE_TABLEAU[tableau]}")
                for tableau in ("Simple", "Double", "Mixte")]
-    header_row = _ecrire_sur_entete(ws, headers, niveau1)
+    niveau2 = [(label, f"{debut} {_SUFFIXE_TABLEAU[tableau]}", f"{fin} {_SUFFIXE_TABLEAU[tableau]}")
+               for tableau in ("Simple", "Double", "Mixte")
+               for label, debut, fin in _SOUS_GROUPES_SCORE]
+    header_row = _ecrire_sur_entete(ws, headers, niveau1, niveau2)
     ws.append(headers)
     _styliser_ligne(ws, header_row, len(headers))
     ws.freeze_panes = f"B{header_row + 1}"
@@ -1279,12 +1414,22 @@ def _write_stats_avancees_sheet(wb, all_stats):
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
-    for c0, c1 in _grouper(headers, *[(g[1], g[2]) for g in niveau1]):
-        _encadrer_groupe(ws, c0, c1, 1, ws.max_row)
+    _encadrer_groupes(ws, headers, niveau1, niveau2, ws.max_row)
     _ajouter_filtre(ws, len(headers), header_row, ws.max_row)
+    _ajouter_note(ws, 1, ws.max_row, len(headers) + 2,
+                  "COMMENT LIRE (par tableau S/D/M, set par set, forfaits exclus)\n"
+                  "Score moyen (moi / adversaire) : points marqués en moyenne par set, par moi et par "
+                  "l'adversaire.\n"
+                  "Score max infligé / reçu : le set gagné / perdu avec le plus gros écart.\n"
+                  "Points moyens (victoire / défaite) : points que JE marque en moyenne dans les sets "
+                  "gagnés / perdus. Ex : 12 en défaite = je perds en accrochant ; 6 = je me fais "
+                  "dominer.\n"
+                  "Sets extrêmes joués / gagnés : sets décidés au point en or (21-20, ou 30-29 avant "
+                  "sept. 2026).\n"
+                  + _NOTE_DYNAMIQUE.split("\n", 1)[1])
 
     # --- sets au plafond de prolongation (30-29 / 21-20), résumé club ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Sets au plafond de prolongation (30-29 avant le 1er septembre 2026, 21-20 depuis)"])
     resume_header_row = ws.max_row + 1
@@ -1310,6 +1455,11 @@ def _write_stats_avancees_sheet(wb, all_stats):
     ws.append(["% victoire dans ces sets", round(pct, 1) if pct is not None else None])
     resume_last_row = ws.max_row
     _styliser_mini_tableau(ws, titre_row, resume_header_row, resume_last_row, 2)
+    _ajouter_note(ws, titre_row, resume_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Sets terminés au point en or (21-20 depuis sept. 2026, 30-29 avant) : le set le plus "
+                  "serré possible, décidé sur une seule balle, tous joueurs et tableaux confondus.\n"
+                  "% victoire < 50 % → le club perd plus souvent qu'il ne gagne ces balles décisives.")
 
     if nb_joues:
         pie = PieChart()
@@ -1318,10 +1468,10 @@ def _write_stats_avancees_sheet(wb, all_stats):
         labels = Reference(ws, min_col=1, min_row=gagnes_row, max_row=gagnes_row + 1)
         pie.add_data(data)
         pie.set_categories(labels)
-        ws.add_chart(pie, f"D{resume_header_row}")
+        ws.add_chart(pie, f"{get_column_letter(COLONNE_NOTE_MINI_TABLEAUX + NB_COLONNES_NOTE + 1)}{titre_row}")
 
     # --- tournoi le plus / le moins victorieux (min. 5 joueurs engagés) ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Tournoi le plus / le moins victorieux (au moins 5 joueurs du club engagés)"])
     tournoi_header_row = ws.max_row + 1
@@ -1337,9 +1487,14 @@ def _write_stats_avancees_sheet(wb, all_stats):
     tournoi_last_row = ws.max_row
     _appliquer_mise_en_forme(ws, tournoi_headers, tournoi_first_row, tournoi_last_row)
     _styliser_mini_tableau(ws, titre_row, tournoi_header_row, tournoi_last_row, len(tournoi_headers))
+    _ajouter_note(ws, titre_row, tournoi_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Seulement les tournois où au moins 5 joueurs du club étaient engagés (sinon un tournoi "
+                  "à 1 joueur et 2 victoires serait « le meilleur »). Un même tournoi sur 2 jours "
+                  "consécutifs compte pour un seul.")
 
     # --- rivalités entre joueurs du club, en Simple ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Rivalités entre joueurs du club (Simple, matchs intra-club)"])
     riv_header_row = ws.max_row + 1
@@ -1353,9 +1508,13 @@ def _write_stats_avancees_sheet(wb, all_stats):
     if riv_last_row >= riv_first_row:
         _appliquer_mise_en_forme(ws, riv_headers, riv_first_row, riv_last_row)
     _styliser_mini_tableau(ws, titre_row, riv_header_row, riv_last_row, len(riv_headers))
+    _ajouter_note(ws, titre_row, riv_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Matchs de Simple en tournoi entre deux joueurs du club. Victoires A / B : combien "
+                  "de fois chacun a gagné la confrontation.")
 
     # --- plus gros pics/chutes de cote sur un mois, par tableau et genre ---
-    ws.append([])
+    _ligne_vide(ws)
     titre_row = ws.max_row + 1
     ws.append(["Plus gros pics/chutes de cote sur un mois, par tableau et par genre"])
     pic_header_row = ws.max_row + 1
@@ -1368,27 +1527,100 @@ def _write_stats_avancees_sheet(wb, all_stats):
     if pic_last_row >= pic_first_row:
         _appliquer_mise_en_forme(ws, pic_headers, pic_first_row, pic_last_row)
     _styliser_mini_tableau(ws, titre_row, pic_header_row, pic_last_row, len(pic_headers))
+    _ajouter_note(ws, titre_row, pic_last_row, COLONNE_NOTE_MINI_TABLEAUX,
+                  "COMMENT LIRE\n"
+                  "Pour chaque tableau et chaque sexe : le joueur qui a gagné le plus de points de cote "
+                  "sur un seul mois (Pic) et celui qui en a perdu le plus (Chute).\n"
+                  "Delta cote = variation totale de sa cote sur ce mois (journal de suivi FFBaD).")
 
     return ws
 
 
+LIGNES_MAX_ENTETE = 3
+
+
+def _largeur_entete(texte):
+    """Largeur (en caractères) pour qu'un en-tête tienne sur au plus
+    LIGNES_MAX_ENTETE lignes, sans jamais couper un mot."""
+    mots = texte.split()
+    largeur = max(max((len(m) for m in mots), default=0), -(-len(texte) // LIGNES_MAX_ENTETE))
+    # la coupure se fait au mot, pas au caractère : la largeur "idéale"
+    # ci-dessus peut donner une ligne de plus que prévu
+    while _nb_lignes(texte, largeur) > LIGNES_MAX_ENTETE:
+        largeur += 1
+    return largeur
+
+
+def _nb_lignes(texte, largeur):
+    """Nombre de lignes occupées par `texte` renvoyé à la ligne (au mot)
+    dans une colonne de `largeur` caractères."""
+    lignes, courante = 1, 0
+    for mot in texte.split():
+        if courante and courante + 1 + len(mot) > largeur:
+            lignes += 1
+            courante = len(mot)
+        else:
+            courante += (1 if courante else 0) + len(mot)
+    return lignes
+
+
 def _ajuster_largeurs_colonnes(ws, largeur_min=8, largeur_max=40):
-    """Largeur de chaque colonne ajustée au contenu le plus long qu'elle
-    contient (en-tête compris) - par défaut openpyxl laisse toutes les
-    colonnes à la largeur standard d'Excel, bien trop étroite pour des
-    en-têtes comme "Meilleur partenaire au club (si différent)" ou un nom
-    de tournoi à rallonge. Plafonnée pour qu'un texte exceptionnellement
-    long n'élargisse pas toute la feuille à l'excès."""
-    largeurs = {}
+    """Largeur de chaque colonne ajustée à son CONTENU (pas à son
+    en-tête) - par défaut openpyxl laisse toutes les colonnes à la largeur
+    standard d'Excel, bien trop étroite pour un nom de tournoi à rallonge.
+    Plafonnée pour qu'un texte exceptionnellement long n'élargisse pas
+    toute la feuille à l'excès.
+
+    Un en-tête plus long que le contenu de sa colonne (ex: "Indice perf.
+    avec lui/elle" au-dessus de valeurs à 4 caractères) est renvoyé à la
+    ligne (au plus LIGNES_MAX_ENTETE lignes) au lieu d'élargir la colonne
+    pour lui seul - avant, la largeur suivait l'en-tête et les feuilles
+    étaient remplies de colonnes très larges presque vides. La hauteur de
+    la ligne d'en-tête est ajustée en conséquence (Excel ne le fait pas
+    toujours seul pour un fichier généré).
+
+    Ignorées : les cellules fusionnées (sur-en-têtes, encadrés "Comment
+    lire" - leur texte s'étale sur plusieurs colonnes) et les titres de
+    mini-tableaux (fond FILL_TITRE_BLOC, le texte déborde sur les cellules
+    vides à droite)."""
+    fusionnees = set()
+    for plage in ws.merged_cells.ranges:
+        for row in range(plage.min_row, plage.max_row + 1):
+            for col in range(plage.min_col, plage.max_col + 1):
+                fusionnees.add((row, col))
+    lignes_entete = getattr(ws, "lignes_entete", set())
+
+    contenu, entetes = {}, defaultdict(list)
     for row in ws.iter_rows():
         for cell in row:
-            if cell.value is None:
+            if cell.value is None or (cell.row, cell.column) in fusionnees:
                 continue
-            longueur = len(str(cell.value))
-            col = cell.column_letter
-            largeurs[col] = max(largeurs.get(col, 0), longueur)
-    for col, longueur in largeurs.items():
-        ws.column_dimensions[col].width = max(largeur_min, min(largeur_max, longueur + 2))
+            if cell.fill is FILL_TITRE_BLOC or cell.fill.fgColor.rgb == FILL_TITRE_BLOC.fgColor.rgb:
+                continue
+            texte = str(cell.value)
+            if cell.row in lignes_entete:
+                entetes[cell.column_letter].append(cell)
+            else:
+                contenu[cell.column_letter] = max(contenu.get(cell.column_letter, 0), len(texte))
+
+    hauteur_entete = defaultdict(lambda: 1)
+    for col in set(contenu) | set(entetes):
+        largeur = contenu.get(col, 0)
+        for cell in entetes.get(col, []):
+            largeur = max(largeur, _largeur_entete(str(cell.value)))
+        largeur = max(largeur_min - 2, min(largeur_max - 2, largeur))
+        ws.column_dimensions[col].width = largeur + 2
+        for cell in entetes.get(col, []):
+            texte = str(cell.value)
+            if len(texte) > largeur:
+                cell.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+                hauteur_entete[cell.row] = max(hauteur_entete[cell.row], _nb_lignes(texte, largeur))
+
+    for row, nb in hauteur_entete.items():
+        if nb > 1:
+            hauteur = nb * 13 + 4
+            actuelle = ws.row_dimensions[row].height or 0
+            ws.row_dimensions[row].height = max(actuelle, hauteur)
 
 
 # couleur d'onglet par feuille - repère rapide parmi les 9 tabs : même

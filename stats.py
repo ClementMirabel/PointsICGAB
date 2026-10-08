@@ -122,15 +122,19 @@ def plus_grosse_perf(matchs):
     pour ça - un match qui rapporte gros peut être contre un adversaire
     "seulement" un peu mieux coté mais avec un écart de score qui compte
     plus dans le barème que prévu, ou l'inverse)."""
-    candidats = [m for m in matchs if m["points_cote"] is not None and not _est_forfait(m)]
+    candidats = [m for m in matchs
+                 if m["victoire"] and m["points_cote"] is not None and not _est_forfait(m)]
     if not candidats:
-        return None
+        return None  # jamais gagné : pas de "perf" à afficher (sinon la défaite la moins coûteuse ressortait)
     return _fait_marquant(max(candidats, key=lambda m: m["points_cote"]))
 
 
 def plus_grosse_defaite_points(matchs):
-    """Le match qui a coûté le plus de points de cote (forfaits exclus)."""
-    candidats = [m for m in matchs if m["points_cote"] is not None and not _est_forfait(m)]
+    """Le match qui a coûté le plus de points de cote (forfaits exclus),
+    parmi les défaites uniquement - None si le joueur n'a jamais perdu
+    (sinon la victoire la moins rentable ressortait comme "contre-perf")."""
+    candidats = [m for m in matchs
+                 if not m["victoire"] and m["points_cote"] is not None and not _est_forfait(m)]
     if not candidats:
         return None
     return _fait_marquant(min(candidats, key=lambda m: m["points_cote"]))
@@ -651,6 +655,32 @@ def evolution_mensuelle_cote(journal_entries):
     return dict(par_mois)
 
 
+def journal_depuis_matchs(cote_septembre, date_septembre, matchs_avec_date):
+    """Reconstitue un journal de cote (même format que results.
+    parse_journal_complet : liste de {date, points, cote}, du plus récent au
+    plus ancien, terminée par la ligne d'initialisation de saison) à partir
+    de la cote du 1er septembre + les points de cote de chaque match, cumulés
+    jour par jour. Filet de sécurité quand le vrai journal de suivi n'a pas
+    pu être lu (constaté : vide pour tout le club sur un run complet) - sans
+    lui, Cote min/max/moyenne, Stabilité, Diff cote mensuelle et Pics/chutes
+    restaient entièrement vides. Moins exact que le journal (un match dont
+    les points ne sont pas encore publiés compte pour 0), mais suffisant pour
+    ces stats. [] si la cote de septembre est inconnue.
+
+    matchs_avec_date : liste de (date, match)."""
+    if cote_septembre is None or date_septembre is None:
+        return []
+    par_jour = defaultdict(float)
+    for d, m in matchs_avec_date:
+        par_jour[d] += m["points_cote"] or 0.0
+    entries = [{"date": date_septembre, "points": cote_septembre, "cote": cote_septembre}]
+    cote = cote_septembre
+    for d in sorted(par_jour):
+        cote += par_jour[d]
+        entries.append({"date": d, "points": par_jour[d], "cote": cote})
+    return entries[::-1]
+
+
 def build_player_stats(player, events_par_tableau):
     """player : entrée roster (Nom/Sexe/Classement Actuel/Points Actuel),
     complétée par le "Meilleur tableau"/"Valeur IC" déjà calculés
@@ -658,11 +688,16 @@ def build_player_stats(player, events_par_tableau):
 
     Renvoie un dict prêt à être normalisé au niveau du club puis écrit dans
     l'Excel."""
-    journal = player.get("Journal cote") or {}
+    journal = dict(player.get("Journal cote") or {})
+    sept = player.get("Classement 1er septembre") or {}
     par_tableau = {}
     for tableau in ("Simple", "Double", "Mixte"):
         events = events_par_tableau.get(tableau, [])
         matchs = [m for e in events for m in e["matchs"]]
+        if not journal.get(tableau):
+            journal[tableau] = journal_depuis_matchs(
+                (sept.get(tableau) or {}).get("points"), sept.get("date"),
+                [(parse_date_fr(e["date"]), m) for e in events for m in e["matchs"]])
         stats = discipline_stats(events)
         classement = player["Classement Actuel"][tableau]
         points = {"Simple": 0.0, "Double": 0.0, "Mixte": 0.0}
