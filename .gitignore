@@ -4,5 +4,8 @@ build/
 dist/
 pointsIC.xlsx
 statsJoueurs.xlsx
+statsJoueurs.html
+statsJoueurs.json
+icbad.json
 ~$*.xlsx
 debug/

@@ -5,6 +5,8 @@ septembre, indices, tournois) pour tout le club.
     python statsJoueurs.py                  # tout le roster -> statsJoueurs.xlsx
     python statsJoueurs.py 06627061 00123456 # juste ces licences (test rapide)
     python statsJoueurs.py --debug 06627061  # dump HTML brut pour inspection
+    python statsJoueurs.py --from-json statsJoueurs.json  # régénère Excel +
+        # page web depuis le dump du dernier run, sans re-scraper
     python statsJoueurs.py --check-collapse 06627061  # les panneaux ont-ils
         # besoin d'un clic pour livrer leurs données, ou sont-elles déjà
         # dans le DOM avant tout clic ? (diagnostic de perf)
@@ -28,6 +30,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
 
 import export_excel
+import export_web
+import icbad
 import pointsIC
 import results
 import roster
@@ -767,6 +771,9 @@ def main(licence_filter):
     for player in players:
         pointsIC.compute_IC_points(player)
 
+    licences_privees = {p["Licence"] for p in players if p.get("Prive")}
+    effectif = export_web.effectif_payload(players)  # tout le club, avant le filtre R6 (planificateur IC)
+
     if licence_filter:
         players = [p for p in players if p["Licence"] in licence_filter]
         print(f"{len(players)} joueur(s) sélectionné(s) (test).")
@@ -786,6 +793,10 @@ def main(licence_filter):
               f"scraping Selenium sauté pour eux.")
         players = [p for p in players if not p.get("Prive")]
 
+    # interclubs d'abord (icbad, public, sans Selenium) : on en a besoin
+    # pour savoir quels joueurs d'interclubs n'auront pas de fiche complète
+    interclubs = None if licence_filter else collecter_interclubs()
+
     my_licence, my_password = get_credentials()
     driver = new_driver()
     try:
@@ -795,6 +806,8 @@ def main(licence_filter):
             sys.exit(1)
         print("Connecté.")
         all_stats = scrape_all(driver, players)
+        if interclubs:
+            completer_points_cote_ic(driver, interclubs, {s["Licence"] for s in all_stats}, licences_privees)
     finally:
         driver.quit()
 
@@ -803,9 +816,114 @@ def main(licence_filter):
         sys.exit(1)
 
     stats.normaliser_club(all_stats)
+    export_web.write_stats_json(all_stats, os.path.join(APP_DIR, "statsJoueurs.json"), interclubs, effectif)
+    ecrire_exports(all_stats, interclubs, effectif)
+
+
+def scrape_resultats(driver, licence, nom):
+    """Version allégée de scrape_player : seulement le panneau Résultats
+    (Simple, Double, Mixte) de la saison en cours - pas de journal de cote
+    ni d'historique de classement. Sert aux joueurs d'interclubs sans fiche
+    complète (sous R6), pour leurs points de cote gagnés en interclub.
+    Lève JoueurPrive si le profil est privé."""
+    _charger_page_joueur(driver, f"https://myffbad.fr/joueur/{licence}")
+    expand_section_by_text(driver, "Résultats")
+    charger_tous_les_resultats(driver)
+    events = {"Simple": _parse_results_with_retry(driver, nom)}
+    for tableau in ("Double", "Mixte"):
+        click_buttons_by_text(driver, tableau, container_testid="player-results")
+        charger_tous_les_resultats(driver)
+        events[tableau] = _parse_results_with_retry(driver, nom)
+    return {tableau: _filtrer_saison_courante(es) for tableau, es in events.items()}
+
+
+def points_cote_ic_par_equipe(events_par_tableau):
+    """Somme des points de cote des matchs d'interclub, par numéro d'équipe
+    du club ({"3": 14.0, ...}, clés en texte comme dans le JSON)."""
+    points = {}
+    for events in events_par_tableau.values():
+        for e in events:
+            if not e["est_interclub"]:
+                continue
+            equipe = results.equipe_club(e.get("tableau_ou_rencontre"))
+            if equipe is None:
+                continue
+            total = sum(m["points_cote"] for m in e["matchs"] if m["points_cote"] is not None)
+            points[str(equipe)] = points.get(str(equipe), 0.0) + total
+    return points
+
+
+def completer_points_cote_ic(driver, interclubs, licences_avec_fiche, licences_privees):
+    """Points de cote en interclub des joueurs qui ont joué en interclub
+    mais n'ont pas de fiche complète (sous R6) : scrape allégé de leurs
+    résultats (voir scrape_resultats), stocké dans
+    interclubs["points_cote_complement"] - repris par la page web avec ceux
+    des fiches complètes. Les profils privés sont sautés (inaccessibles)."""
+    a_faire = {}
+    for e in interclubs["equipes"]:
+        for r in e["rencontres"]:
+            for m in r["matchs"]:
+                for p in m["club"]:
+                    lic = p.get("licence")
+                    if lic and lic not in licences_avec_fiche and lic not in licences_privees:
+                        a_faire.setdefault(lic, p["nom"])
+    print(f"\nPoints de cote en interclub : {len(a_faire)} joueur(s) d'interclubs sans fiche complète...")
+    complement, prives = {}, 0
+    joueurs_ic = {p.get("licence") for e in interclubs["equipes"] for r in e["rencontres"]
+                  for m in r["matchs"] for p in m["club"]}
+    licences_prives_ic = set(joueurs_ic & set(licences_privees))
+    for i, (lic, nom) in enumerate(sorted(a_faire.items(), key=lambda x: x[1]), 1):
+        try:
+            complement[lic] = points_cote_ic_par_equipe(scrape_resultats(driver, lic, nom))
+            print(f"  [{i}/{len(a_faire)}] {nom} : {complement[lic] or 'aucun point de cote'}")
+        except JoueurPrive:
+            prives += 1
+            licences_prives_ic.add(lic)
+            print(f"  [{i}/{len(a_faire)}] {nom} : profil privé")
+        except Exception as exc:  # un joueur en erreur ne doit pas bloquer les autres
+            print(f"  [{i}/{len(a_faire)}] {nom} : [ERREUR] {exc}")
+    interclubs["points_cote_complement"] = complement
+    interclubs["prives"] = sorted(licences_prives_ic)  # page web : "profil privé" plutôt qu'un tiret muet
+    print(f"  -> {len(complement)} récupéré(s), {prives} privé(s) en plus de ceux du roster.")
+
+
+def collecter_interclubs():
+    """Page Interclubs (icbad.ffbad.org, public) - un échec ici ne doit pas
+    faire perdre tout l'export : la page web s'affiche alors sans l'onglet
+    Interclubs rempli."""
+    print("\nRécupération des interclubs (icbad.ffbad.org)...")
+    try:
+        return icbad.collecter()
+    except Exception as e:
+        print(f"  [ERREUR] interclubs non récupérés : {e}")
+        return None
+
+
+def ecrire_exports(all_stats, interclubs=None, effectif=None):
+    """Excel + page web (HTML autonome) - all_stats déjà normalisé."""
     output_path = os.path.join(APP_DIR, "statsJoueurs.xlsx")
     export_excel.write_stats_excel(all_stats, output_path)
-    print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}")
+    html_path = export_web.write_stats_html(all_stats, os.path.join(APP_DIR, "statsJoueurs.html"),
+                                            interclubs=interclubs, effectif=effectif)
+    print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}, {html_path}")
+
+
+def main_from_json(path):
+    """Régénère les exports depuis un dump statsJoueurs.json (voir
+    export_web.write_stats_json), sans connexion ni scraping - pour itérer
+    sur la mise en forme. Les indices sont recalculés (normaliser_club ne
+    dépend que des valeurs brutes déjà présentes dans le dump)."""
+    all_stats, interclubs, effectif = export_web.charger_dump(path)
+    if interclubs is None:  # dump antérieur à la page Interclubs : données publiques, rapides à récupérer
+        interclubs = collecter_interclubs()
+    if effectif is None:  # idem pour l'effectif du planificateur (roster public)
+        with roster.new_session() as session:
+            players = roster.build_players(session)
+        for player in players:
+            pointsIC.compute_IC_points(player)
+        effectif = export_web.effectif_payload(players)
+    stats.normaliser_club(all_stats)
+    ecrire_exports(all_stats, interclubs, effectif)
 
 
 if __name__ == "__main__":
@@ -813,6 +931,9 @@ if __name__ == "__main__":
     if "--check-collapse" in args:
         args.remove("--check-collapse")
         check_collapse_hypothesis(args[0] if args else input("Licence à tester : "))
+    elif "--from-json" in args:
+        args.remove("--from-json")
+        main_from_json(args[0] if args else os.path.join(APP_DIR, "statsJoueurs.json"))
     elif "--debug" in args:
         args.remove("--debug")
         main_debug(args)

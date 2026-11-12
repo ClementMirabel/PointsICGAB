@@ -16,6 +16,9 @@ on:
       - "results.py"
       - "stats.py"
       - "export_excel.py"
+      - "export_web.py"
+      - "icbad.py"
+      - "web/**"
       - "requirements.txt"
       - ".github/workflows/weekly-export.yml"
   workflow_dispatch:
@@ -76,7 +79,57 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: statsJoueurs-xlsx
-          path: statsJoueurs.xlsx
+          path: |
+            statsJoueurs.xlsx
+            statsJoueurs.html
+
+      # dump complet (cache pour --from-json), gardé en artefact du run
+      # seulement - pas publié dans la release
+      - name: Upload JSON dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: statsJoueurs-json
+          path: statsJoueurs.json
+
+  # Page web hébergée à adresse fixe (GitHub Pages) : même URL chaque semaine,
+  # donc le plan du planificateur IC, enregistré dans le navigateur (clé par
+  # saison, indépendante de la date des données), est retrouvé après chaque
+  # mise à jour. Prérequis, une seule fois : Settings > Pages > Source =
+  # "GitHub Actions".
+  pages:
+    needs: export-stats
+    if: ${{ needs.export-stats.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: statsJoueurs-xlsx
+          path: export
+
+      - name: Prepare site
+        run: |
+          mkdir -p site
+          cp export/statsJoueurs.html site/index.html
+          touch site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
 
   release:
     needs: [export-points, export-stats]
@@ -100,4 +153,6 @@ jobs:
           tag_name: weekly-data
           name: "Export hebdomadaire"
           body: Généré automatiquement tous les jeudis à partir des données myffbad.fr.
-          files: artifacts/**/*.xlsx
+          files: |
+            artifacts/**/*.xlsx
+            artifacts/**/*.html

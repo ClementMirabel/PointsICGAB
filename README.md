@@ -10,6 +10,21 @@ Pas besoin d'installer quoi que ce soit : un export à jour est généré tous l
 
 C'est un lien fixe : il pointe toujours vers la dernière version générée, pas besoin de le remettre à jour.
 
+## Page web : stats joueurs, club, interclubs et planificateur
+
+[**🌐 Ouvrir la page**](https://clementmirabel.github.io/PointsICGAB/) (mise à jour tous les jeudis, même adresse chaque semaine).
+
+- **Club** : vue d'ensemble, classement de forme, compétitions, stats par catégorie, profil de jeu, records.
+- **Interclubs** : bilan de chaque équipe (rencontres, joueurs alignés, classement de poule), d'après [icbad.ffbad.org](https://icbad.ffbad.org/instance/GAB38).
+- **Planificateur** (équipes 1 à 6) : affectation des joueurs par week-end, composition des rencontres, contrôles réglementaires (valeurs ICN/ICR, hiérarchie, joueurs brûlés, mutés).
+- **Joueurs** : une fiche par joueur.
+
+Le plan du planificateur est enregistré **dans le navigateur** de chacun : il est conservé d'une semaine à l'autre, mais n'est pas partagé. Pour l'échanger entre capitaines : bouton « Exporter le plan », puis « Importer un plan » de l'autre côté.
+
+L'export Excel complet reste téléchargeable : [**⬇️ statsJoueurs.xlsx**](https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/statsJoueurs.xlsx).
+
+Pour régénérer la page en local sans re-scraper : `python statsJoueurs.py --from-json statsJoueurs.json` (dump produit par chaque run).
+
 ## Applications (pour lancer un export à la demande)
 
 Pour générer un export à un autre moment que le jeudi, deux applications autonomes sont aussi disponibles.
