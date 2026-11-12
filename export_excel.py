@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 
 import openpyxl
 from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.comments import Comment
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -178,7 +179,8 @@ TEXT_HEADERS = {"Nom", "Sexe", "Mois", "Catégorie", "Meilleur partenaire", "Mei
                 "Résultat", "Tournoi", "Joueur A", "Joueur B", "Type", "Joueur",
                 "Tableau", "Plus grosse perf", "Plus grosse perf (score)",
                 "Plus grosse contre-perf", "Plus grosse contre-perf (score)",
-                "Plus gros écart de cote", "Résultat (écart max)", "Score (écart max)"} | CLASSEMENT_HEADERS
+                "Plus gros écart de cote", "Résultat (écart max)", "Score (écart max)",
+                "Amplitude cote S", "Amplitude cote D", "Amplitude cote M"} | CLASSEMENT_HEADERS
 
 
 def _est_colonne_delta_partenaire(header):
@@ -197,7 +199,42 @@ def _est_colonne_diff(header):
 
 
 def _pct(value):
-    return round(value, 1)
+    return round(value, 1) if value is not None else None
+
+
+def _cle_forme(indice):
+    """Clé de tri décroissant par indice de forme, None (aucun match) en dernier."""
+    return -indice if indice is not None else float("inf")
+
+
+# explication des indices, en commentaire sur la cellule d'en-tête (survol
+# de la souris dans Excel) - préfixe du nom de colonne -> texte
+EXPLICATIONS_INDICES = {
+    "Indice forme": (
+        "Moyenne de l'indice performance et de l'indice qualité. "
+        "Rang percentile parmi les joueurs du même onglet ayant joué ce tableau : "
+        "50 = forme médiane, 100 = le meilleur. Vide si aucun match."),
+    "Indice performance": (
+        "Taux de victoire lissé (comme si 5 matchs à 50% s'ajoutaient), en rang percentile : "
+        "un 2/2 ne passe pas devant un 12/15."),
+    "Indice qualité": (
+        "Points de cote gagnés/perdus par match (lissés), en rang percentile : "
+        "battre plus fort que soi rapporte plus, perdre contre plus faible coûte plus."),
+    "Indice niveau": (
+        "Classement (valeur IC) en rang percentile. Pas inclus dans l'indice forme : "
+        "c'est un état, pas un résultat de la saison."),
+    "% lissé avec lui/elle": (
+        "Taux de victoire lissé avec ce partenaire (comme si 5 matchs à 50% s'ajoutaient)."),
+    "Amplitude cote": "Écart entre la cote la plus haute et la plus basse de la saison, en points.",
+}
+
+
+def _commenter_entetes(ws, headers, header_row):
+    for idx, header in enumerate(headers, start=1):
+        for prefixe, texte in EXPLICATIONS_INDICES.items():
+            if header.startswith(prefixe):
+                ws.cell(row=header_row, column=idx).comment = Comment(texte, "statsJoueurs", width=320, height=110)
+                break
 
 
 def _colorer_classement(ws, col_idx, first_row, last_row):
@@ -220,8 +257,14 @@ def _colorer_ordre_tableau(ws, col_idx, first_row, last_row):
     col = get_column_letter(col_idx)
     plage = f"{col}{first_row}:{col}{last_row}"
     ref = f"{col}{first_row}"
+    # n'y figurent que les tableaux joués (voir stats.ordre_disciplines) :
+    # combinaisons complètes d'abord, puis 1-2 tableaux joués -> couleur
+    # de la discipline en tête (la 1re règle qui matche l'emporte)
     for combo, fill in ORDRE_TABLEAU_COULEURS.items():
         ws.conditional_formatting.add(plage, FormulaRule(formula=[f'{ref}="{combo}"'], fill=fill))
+    for discipline, fill in (("Simple", FILL_S_D), ("Double", FILL_D_S), ("Mixte", FILL_M_S)):
+        ws.conditional_formatting.add(
+            plage, FormulaRule(formula=[f'LEFT({ref},{len(discipline)})="{discipline}"'], fill=fill))
 
 
 def _degrade(ws, col_idx, first_row, last_row):
@@ -443,7 +486,7 @@ def _fmt_meilleur_partenaire(mp):
     if not mp:
         return [None, None, None, None, None, None]
     return [mp["nom"], mp["matchs_joues"], mp["victoires"], _pct(mp["pct_victoire"]),
-            round(mp["indice_performance"], 2), mp.get("points_cote_total")]
+            _pct(mp["taux_lisse"]), mp.get("points_cote_total")]
 
 
 def _fmt_fait_marquant(fm):
@@ -497,7 +540,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         if entry["matchs_joues"] == 0:
             continue
         rows.append((s, entry))
-    rows.sort(key=lambda r: -r[1]["indice_global"])
+    rows.sort(key=lambda r: _cle_forme(r[1]["indice_forme"]))
 
     mois_tries = sorted({mois for _, entry in rows for mois in entry["evolution_mensuelle_cote"]})
 
@@ -508,7 +551,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     for mois in mois_tries:
         headers += [f"Diff cote {mois}"]
     headers += ["Matchs joués", "Victoires", "% victoire"]
-    headers += ["Indice performance", "Indice niveau", "Indice qualité", "Indice global"]
+    headers += ["Indice forme", "Indice performance", "Indice qualité", "Indice niveau"]
     headers += [
         "Cote adverse moyenne",
         "Meilleure victoire", "Meilleure victoire (cote adv)", "Meilleure victoire (score)",
@@ -524,10 +567,10 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
             "Matchs sans partenaire club", "% sans partenaire club",
             "Delta % (avec - sans)",
             "Meilleur partenaire", "Matchs avec lui/elle", "Victoires avec lui/elle",
-            "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
+            "% victoire avec lui/elle", "% lissé avec lui/elle", "Points cote marqués ensemble",
             "Meilleur partenaire au club (si différent)", "Matchs avec lui/elle (club)",
             "Victoires avec lui/elle (club)", "% victoire avec lui/elle (club)",
-            "Indice perf. avec lui/elle (club)", "Points cote marqués ensemble (club)",
+            "% lissé avec lui/elle (club)", "Points cote marqués ensemble (club)",
         ]
 
     niveau1 = [("Classement & cote", "Classement", "Diff cote")]
@@ -535,7 +578,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         niveau1 += [("Évolution cote", f"Diff cote {mois_tries[0]}", f"Diff cote {mois_tries[-1]}")]
     niveau1 += [
         ("Résultats", "Matchs joués", "% victoire"),
-        ("Indices", "Indice performance", "Indice global"),
+        ("Indices", "Indice forme", "Indice niveau"),
         ("Faits marquants & clutch", "Cote adverse moyenne", "Diff clutch (%)"),
     ]
     if has_partner:
@@ -563,6 +606,7 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
     header_row = _ecrire_sur_entete(ws, headers, niveau1, niveau2)
     ws.append(headers)
     _styliser_ligne(ws, header_row, len(headers))
+    _commenter_entetes(ws, headers, header_row)
     ws.freeze_panes = f"B{header_row + 1}"
 
     for s, entry in rows:
@@ -575,8 +619,8 @@ def _write_discipline_sheet(wb, title, tableau, sexe, all_stats):
         for mois in mois_tries:
             row += [round(entry["evolution_mensuelle_cote"].get(mois, 0.0), 1)]
         row += [entry["matchs_joues"], entry["victoires"], _pct(entry["pct_victoire"])]
-        row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]),
-                _pct(entry["indice_qualite"]), _pct(entry["indice_global"])]
+        row += [_pct(entry["indice_forme"]), _pct(entry["indice_performance"]),
+                _pct(entry["indice_qualite"]), _pct(entry["indice_niveau"])]
         cam = entry["cote_adverse_moyenne"]
         row += [round(cam, 1) if cam is not None else None]
         row += _fmt_fait_marquant(entry["meilleure_victoire"])
@@ -681,17 +725,17 @@ def _write_bilan_sheet(wb, all_stats):
         "Matchs total", "Victoires total", "% total",
         # rappel des indices par tableau (pas seulement le global agrégé,
         # pour qu'on sache de quel tableau ils parlent), puis le global
-        "Indice performance S", "Indice niveau S", "Indice qualité S", "Indice global S",
-        "Indice performance D", "Indice niveau D", "Indice qualité D", "Indice global D",
-        "Indice performance M", "Indice niveau M", "Indice qualité M", "Indice global M",
-        "Indice performance (global)", "Indice niveau (global)", "Indice qualité (global)",
-        "Indice global (global)",
+        "Indice forme S", "Indice performance S", "Indice qualité S", "Indice niveau S",
+        "Indice forme D", "Indice performance D", "Indice qualité D", "Indice niveau D",
+        "Indice forme M", "Indice performance M", "Indice qualité M", "Indice niveau M",
+        "Indice forme (global)", "Indice performance (global)", "Indice qualité (global)",
+        "Indice niveau (global)",
         "Matchs avec partenaire club (D+M)", "% avec partenaire club",
         "Matchs sans partenaire club (D+M)", "% sans partenaire club",
         "Delta % partenaire (avec - sans)",
         # un seul meilleur partenaire (D+M), pas de distinction club/overall ici
         "Meilleur partenaire (D+M)", "Matchs avec lui/elle", "Victoires avec lui/elle",
-        "% victoire avec lui/elle", "Indice perf. avec lui/elle", "Points cote marqués ensemble",
+        "% victoire avec lui/elle", "% lissé avec lui/elle", "Points cote marqués ensemble",
         "Nb tournois individuels", "Nb interclubs (par jour)",
         # regroupé par thème (classement, puis place, puis cote), et DANS
         # chaque thème sept./actuel/diff sont adjacents plutôt qu'éclatés
@@ -715,28 +759,28 @@ def _write_bilan_sheet(wb, all_stats):
         "Cote min S", "Cote min D", "Cote min M",
         "Cote max S", "Cote max D", "Cote max M",
         "Cote moyenne S", "Cote moyenne D", "Cote moyenne M",
-        "Stabilité cote S (%)", "Stabilité cote D (%)", "Stabilité cote M (%)",
+        "Amplitude cote S", "Amplitude cote D", "Amplitude cote M",
     ]
 
     niveau1 = [
         ("Résultats", "Matchs S", "% total"),
-        ("Indices", "Indice performance S", "Indice global (global)"),
+        ("Indices", "Indice forme S", "Indice niveau (global)"),
         ("Partenaire club", "Matchs avec partenaire club (D+M)", "Delta % partenaire (avec - sans)"),
         ("Meilleur partenaire", "Meilleur partenaire (D+M)", "Points cote marqués ensemble"),
         ("Tournois", "Nb tournois individuels", "Nb interclubs (par jour)"),
         ("Évolution classement", "Classement sept. S", "Gain tableau M"),
         ("Évolution place", "Place sept. S", "Gain places M"),
         ("Évolution cote", "Cote sept. S", "Tendance cote cumulée (pts/semaine)"),
-        ("Cote sur la saison", "Cote min S", "Stabilité cote M (%)"),
+        ("Cote sur la saison", "Cote min S", "Amplitude cote M"),
     ]
     niveau2 = [
         ("Simple", "Matchs S", "% S"), ("Double", "Matchs D", "% D"),
         ("Mixte", "Matchs M", "% M"), ("Total", "Matchs total", "% total"),
 
-        ("Simple", "Indice performance S", "Indice global S"),
-        ("Double", "Indice performance D", "Indice global D"),
-        ("Mixte", "Indice performance M", "Indice global M"),
-        ("Global", "Indice performance (global)", "Indice global (global)"),
+        ("Simple", "Indice forme S", "Indice niveau S"),
+        ("Double", "Indice forme D", "Indice niveau D"),
+        ("Mixte", "Indice forme M", "Indice niveau M"),
+        ("Global", "Indice forme (global)", "Indice niveau (global)"),
 
         ("Classement septembre", "Classement sept. S", "Classement sept. M"),
         ("Classement actuel", "Classement actuel S", "Classement actuel M"),
@@ -754,14 +798,15 @@ def _write_bilan_sheet(wb, all_stats):
         ("Min", "Cote min S", "Cote min M"),
         ("Max", "Cote max S", "Cote max M"),
         ("Moyenne", "Cote moyenne S", "Cote moyenne M"),
-        ("Stabilité", "Stabilité cote S (%)", "Stabilité cote M (%)"),
+        ("Amplitude", "Amplitude cote S", "Amplitude cote M"),
     ]
     header_row = _ecrire_sur_entete(ws, headers, niveau1, niveau2)
     ws.append(headers)
     _styliser_ligne(ws, header_row, len(headers))
+    _commenter_entetes(ws, headers, header_row)
     ws.freeze_panes = f"B{header_row + 1}"
 
-    rows = sorted(all_stats, key=lambda s: -s["global"]["indice_global"])
+    rows = sorted(all_stats, key=lambda s: _cle_forme(s["global"]["indice_forme"]))
     for s in rows:
         simple, double, mixte = (s["par_tableau"][t] for t in ("Simple", "Double", "Mixte"))
         g, t, prog = s["global"], s["tournois"], s["progression"]
@@ -777,8 +822,8 @@ def _write_bilan_sheet(wb, all_stats):
             g["matchs_joues"], g["victoires"], _pct(g["pct_victoire"]),
         ]
         for entry in (simple, double, mixte, g):
-            row += [_pct(entry["indice_performance"]), _pct(entry["indice_niveau"]),
-                    _pct(entry["indice_qualite"]), _pct(entry["indice_global"])]
+            row += [_pct(entry["indice_forme"]), _pct(entry["indice_performance"]),
+                    _pct(entry["indice_qualite"]), _pct(entry["indice_niveau"])]
         row += [
             avec["matchs_joues"], _pct(avec["pct_victoire"]),
             sans["matchs_joues"], _pct(sans["pct_victoire"]),
@@ -802,7 +847,7 @@ def _write_bilan_sheet(wb, all_stats):
         row += _cote_saison_valeurs((simple, double, mixte), "cote_min")
         row += _cote_saison_valeurs((simple, double, mixte), "cote_max")
         row += _cote_saison_valeurs((simple, double, mixte), "cote_moyenne", arrondi=True)
-        row += _cote_saison_valeurs((simple, double, mixte), "stabilite", arrondi=True)
+        row += _cote_saison_valeurs((simple, double, mixte), "amplitude", arrondi=True)
         ws.append(row)
 
     _appliquer_mise_en_forme(ws, headers, header_row + 1, ws.max_row)
@@ -1264,7 +1309,7 @@ def _regrouper_dates_consecutives(dates):
     return groupes
 
 
-def _tournois_participation(all_stats, min_joueurs=5):
+def _tournois_club(all_stats, min_joueurs=1):
     """Pour chaque tournoi individuel (hors interclubs et hors matchs
     intra-club - qui ne disent rien de la performance face à l'extérieur),
     les joueurs du club engagés et leur bilan agrégé. Un même tournoi peut
@@ -1273,11 +1318,9 @@ def _tournois_participation(all_stats, min_joueurs=5):
     _regrouper_dates_consecutives) sont fusionnés en une seule occurrence,
     plutôt que comptés comme des tournois séparés jour par jour.
 
-    Renvoie (meilleur, pire) - les deux tournois au % de victoire le plus
-    haut/bas, parmi ceux avec au moins `min_joueurs` joueurs du club
-    engagés (sinon trop peu pour être significatif). (None, None) si aucun
-    tournoi n'atteint ce seuil."""
-    par_date = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0})
+    Renvoie la liste des tournois avec au moins `min_joueurs` joueurs du
+    club engagés : nom, date (1er jour), joueurs, matchs, victoires, pct."""
+    par_date = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0, "points": 0.0})
     for s in all_stats:
         for m in s["match_log"]:
             if m["est_interclub"] or m["intra_club"]:
@@ -1286,6 +1329,7 @@ def _tournois_participation(all_stats, min_joueurs=5):
             b["joueurs"].add(s["Nom"])
             b["joues"] += 1
             b["victoires"] += 1 if m["victoire"] else 0
+            b["points"] += m["points_cote"] or 0.0  # points de cote gagnés/perdus par le club
 
     dates_par_nom = defaultdict(list)
     for nom, d in par_date:
@@ -1294,19 +1338,28 @@ def _tournois_participation(all_stats, min_joueurs=5):
     candidats = []
     for nom, dates in dates_par_nom.items():
         for groupe in _regrouper_dates_consecutives(dates):
-            joueurs, joues, victoires = set(), 0, 0
+            joueurs, joues, victoires, points = set(), 0, 0, 0.0
             for d in groupe:
                 b = par_date[(nom, d)]
                 joueurs |= b["joueurs"]
                 joues += b["joues"]
                 victoires += b["victoires"]
+                points += b["points"]
             if len(joueurs) < min_joueurs:
                 continue
             pct = victoires / joues * 100 if joues else 0.0
             candidats.append({
                 "nom": nom, "date": groupe[0], "joueurs": len(joueurs),
-                "matchs": joues, "victoires": victoires, "pct": pct,
+                "matchs": joues, "victoires": victoires, "pct": pct, "points": points,
             })
+    return candidats
+
+
+def _tournois_participation(all_stats, min_joueurs=5):
+    """(meilleur, pire) parmi _tournois_club(all_stats, min_joueurs) - les
+    deux tournois au % de victoire le plus haut/bas. (None, None) si aucun
+    tournoi n'atteint le seuil."""
+    candidats = _tournois_club(all_stats, min_joueurs)
     if not candidats:
         return None, None
     return max(candidats, key=lambda c: c["pct"]), min(candidats, key=lambda c: c["pct"])
@@ -1391,7 +1444,7 @@ def _write_stats_avancees_sheet(wb, all_stats):
 
     rows = [s for s in all_stats
             if any(s["par_tableau"][t]["matchs_joues"] > 0 for t in ("Simple", "Double", "Mixte"))]
-    rows.sort(key=lambda s: -s["global"]["indice_global"])
+    rows.sort(key=lambda s: _cle_forme(s["global"]["indice_forme"]))
 
     for s in rows:
         row = [s["Nom"], s["Sexe"]]

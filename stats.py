@@ -57,6 +57,7 @@ def _agg_matchs(matchs):
         # de signal de qualité, complémentaire du simple compte de
         # victoires (voir indice_qualite).
         "points_cote_total": sum(points) if points else 0.0,
+        "nb_matchs_cotes": len(points),
     }
 
 
@@ -80,8 +81,17 @@ def _est_forfait(m):
     FFBad ne note pas un résultat qui n'a pas été réellement joué, même si
     le site affiche un score générique du genre 21-0/21-0. À exclure des
     stats basées sur le score (meilleure victoire/pire défaite, profil de
-    score) : un 21-0 par forfait n'est pas un "exploit"."""
-    return m["points_cote"] == 0
+    score) : un 21-0 par forfait n'est pas un "exploit".
+
+    Le score générique sert aussi de signal, pas seulement les points de
+    cote : quand la cote du match est inconnue (points_cote None), le test
+    "== 0" seul laissait passer le forfait - constaté sur un "Score max
+    infligé" à 21-0 en mixte, impossible en vrai depuis le passage aux sets
+    de 15 points (et quasi inexistant avant)."""
+    if m["points_cote"] == 0:
+        return True
+    sets = m.get("sets_detail") or []
+    return bool(sets) and all(sorted(s) == [0, 21] for s in sets)
 
 
 def _fait_marquant(m):
@@ -179,6 +189,11 @@ def david_vs_goliath(matchs):
 
 
 SEUIL_SETS_SERRES = 3
+
+# nombre minimum de matchs à la base d'un taux de dynamique (taux propre,
+# après 1er set gagné, comeback) pour qu'il soit affiché : en dessous, un
+# 0% ou 100% sur 1-2 matchs n'apprend rien et attire l'oeil pour rien.
+SEUIL_DYNAMIQUE = 3
 
 
 def indice_clutch(matchs):
@@ -286,16 +301,18 @@ def dynamique_match(matchs):
     premier_gagne = [m for m in matchs_utiles if m["sets_detail"][0][0] > m["sets_detail"][0][1]]
     premier_perdu = [m for m in matchs_utiles if m["sets_detail"][0][1] > m["sets_detail"][0][0]]
 
+    def _taux(nb, base):
+        # None sous SEUIL_DYNAMIQUE matchs de base (voir sa définition)
+        return (nb / len(base) * 100) if len(base) >= SEUIL_DYNAMIQUE else None
+
     return {
         "nb_gagnes": len(gagnes),
         "nb_propres": len(propres),
-        "taux_propre": (len(propres) / len(gagnes) * 100) if gagnes else None,
+        "taux_propre": _taux(len(propres), gagnes),
         "nb_premier_set_gagne": len(premier_gagne),
-        "taux_apres_premier_set": (sum(1 for m in premier_gagne if m["victoire"]) / len(premier_gagne) * 100)
-                                   if premier_gagne else None,
+        "taux_apres_premier_set": _taux(sum(1 for m in premier_gagne if m["victoire"]), premier_gagne),
         "nb_premier_set_perdu": len(premier_perdu),
-        "taux_comeback": (sum(1 for m in premier_perdu if m["victoire"]) / len(premier_perdu) * 100)
-                          if premier_perdu else None,
+        "taux_comeback": _taux(sum(1 for m in premier_perdu if m["victoire"]), premier_perdu),
     }
 
 
@@ -326,7 +343,7 @@ def discipline_stats_partenaire_combinee(events_double, events_mixte):
 
 def _partenaires_stats(matchs):
     """matchs -> dict clé_partenaire -> agrégat (nom, matchs/victoires/%,
-    indice de performance, total des points de cote gagnés/perdus avec ce
+    taux de victoire lissé, total des points de cote gagnés/perdus avec ce
     partenaire). Regroupe par licence quand connue, par nom sinon."""
     par_partenaire = defaultdict(list)
     for m in matchs:
@@ -343,7 +360,7 @@ def _partenaires_stats(matchs):
             "matchs_joues": agg["matchs_joues"],
             "victoires": agg["victoires"],
             "pct_victoire": agg["pct_victoire"],
-            "indice_performance": indice_performance(agg),
+            "taux_lisse": indice_performance(agg),
             "points_cote_total": agg["points_cote_total"],
         }
     return resultat
@@ -352,8 +369,8 @@ def _partenaires_stats(matchs):
 def _meilleur_partenaire_parmi(matchs, club_uniquement=False):
     """Le partenaire qui ressort en tête, classé D'ABORD par points de cote
     cumulés (déjà ajustés à la force de l'adversaire par le barème FFBad -
-    voir _agg_matchs), et à égalité par l'indice de performance (volume x
-    taux de victoire) comme départage.
+    voir _agg_matchs), et à égalité par le taux de victoire lissé (voir
+    indice_performance) comme départage.
 
     Pas que l'indice de performance seul : constaté qu'un partenaire avec
     beaucoup de victoires mais un bilan de cote négatif ensemble (donc des
@@ -370,7 +387,7 @@ def _meilleur_partenaire_parmi(matchs, club_uniquement=False):
     partenaires = _partenaires_stats(matchs)
     if not partenaires:
         return None
-    return max(partenaires.values(), key=lambda v: (v["points_cote_total"], v["indice_performance"]))
+    return max(partenaires.values(), key=lambda v: (v["points_cote_total"], v["taux_lisse"]))
 
 
 def meilleur_partenaire(events, club_uniquement=False):
@@ -398,19 +415,17 @@ def meilleur_partenaire_club_si_different(overall, club):
 
 
 def ordre_disciplines(par_tableau):
-    """Les 3 tableaux (Simple/Double/Mixte) triés du plus fort au moins fort
-    pour ce joueur, selon indice_global (déjà normalisé club-wide, voir
-    normaliser_club - il faut donc appeler cette fonction APRÈS
-    normaliser_club, pas depuis build_player_stats).
+    """Les tableaux JOUÉS cette saison (au moins un match), triés du plus
+    fort au moins fort pour ce joueur selon indice_forme (déjà calculé
+    club-wide, voir normaliser_club - à appeler APRÈS normaliser_club).
 
-    indice_global et pas indice_performance_brut (l'ancienne version) :
-    c'est le même indice composite utilisé pour classer/trier les joueurs
-    partout ailleurs dans le classeur - sinon "Ordre tableau" pouvait
-    afficher un ordre qui contredisait l'indice global affiché juste à
-    côté (ex: le tableau avec l'indice global le plus haut du joueur pas
-    en tête de son propre "Ordre tableau")."""
-    tableaux = ("Simple", "Double", "Mixte")
-    return sorted(tableaux, key=lambda t: -par_tableau[t]["indice_global"])
+    Les tableaux sans aucun match sont omis plutôt que classés : un
+    tableau non joué n'a pas d'indice de forme (None), et l'ancienne
+    version lui en attribuait un quand même (niveau + qualité par défaut),
+    ce qui faisait sortir en tête un tableau jamais joué - constaté sur
+    plusieurs joueurs ("Simple > ..." avec 0 match en simple)."""
+    tableaux = [t for t in ("Simple", "Double", "Mixte") if par_tableau[t]["indice_forme"] is not None]
+    return sorted(tableaux, key=lambda t: -par_tableau[t]["indice_forme"])
 
 
 def diff_classement(player):
@@ -502,72 +517,70 @@ def diff_classement(player):
     return resultat
 
 
+# lissage des indices : on fait comme si chaque joueur avait joué
+# LISSAGE_MATCHS matchs "fictifs" en plus, à 50% de victoire et 0 point de
+# cote. Effet : sur 2 matchs, un 2/2 ne vaut pas plus qu'un 12/15 (le peu
+# de matchs tire vers la moyenne), alors qu'au-delà de ~15 matchs le
+# lissage ne pèse presque plus. Remplace l'ancien "victoires x taux", qui
+# mesurait surtout le volume (corrélé à 0,9 au nombre de matchs).
+LISSAGE_MATCHS = 5
+
+
 def indice_performance(stats):
-    """victoires x taux de victoire : récompense le volume de victoires ET
-    le taux de réussite en même temps (une valeur brute, normalisée plus
-    tard en % du max observé dans le club)."""
+    """Taux de victoire lissé, en % (voir LISSAGE_MATCHS) - valeur brute,
+    convertie plus tard en rang percentile dans le club. None si aucun
+    match joué (pas de performance à mesurer, plutôt qu'un 0 qui
+    classerait le joueur comme "le plus faible")."""
     if stats["matchs_joues"] == 0:
-        return 0.0
-    return stats["victoires"] * (stats["victoires"] / stats["matchs_joues"])
+        return None
+    return (stats["victoires"] + LISSAGE_MATCHS * 0.5) / (stats["matchs_joues"] + LISSAGE_MATCHS) * 100
 
 
-def indice_global(indice_perf_normalise, indice_niveau_normalise, indice_qualite_normalise):
-    """Moyenne de indice_performance, indice_niveau et indice_qualite, une
-    fois tous les trois normalisés (0-100, % du club - voir
-    normaliser_club) : un joueur à 100 est le meilleur du club sur les
-    trois plans à la fois, 50 = dans la moyenne partout.
-
-    indice_qualite (solde de points de cote gagnés/perdus sur la saison,
-    déjà ajusté à la force des adversaires par le barème FFBad officiel -
-    battre quelqu'un de mieux classé rapporte plus de points que battre
-    quelqu'un de plus faible, et l'inverse pour une défaite) complète
-    indice_performance, qui ne regarde que le nombre de victoires et le
-    taux sans tenir compte de la force des adversaires - un joueur qui
-    gagne beaucoup mais contre des adversaires plus faibles que lui ne doit
-    pas dominer un joueur au taux de victoire supérieur mais aux victoires
-    plus dures à obtenir.
-
-    Une moyenne de valeurs déjà normalisées plutôt qu'un produit de valeurs
-    brutes (l'ancienne approche, sans indice_qualite) : les trois indices
-    bruts n'ont ni la même échelle ni la même distribution - les combiner
-    directement ferait dominer celui qui a la plus grande variance brute
-    plutôt que celui qui est réellement le meilleur sur les trois plans."""
-    return (indice_perf_normalise + indice_niveau_normalise + indice_qualite_normalise) / 3
+def indice_qualite(stats):
+    """Points de cote gagnés/perdus PAR MATCH, lissés (voir
+    LISSAGE_MATCHS) - valeur brute, convertie plus tard en rang
+    percentile. Par match et non plus en total : le total (solde de cote
+    de la saison) faisait doublon avec "Diff cote" (corrélé à 0,93) et
+    dépendait lui aussi surtout du nombre de matchs joués. Les points de
+    cote sont déjà ajustés à la force de l'adversaire par le barème FFBad
+    (battre plus fort rapporte plus, perdre contre plus faible coûte plus) :
+    c'est le signal "qualité des résultats". None si aucun match."""
+    if stats["matchs_joues"] == 0:
+        return None
+    return stats["points_cote_total"] / (stats["nb_matchs_cotes"] + LISSAGE_MATCHS)
 
 
-def normaliser(items, cle_brute, cle_normalisee, echelle=100):
-    """Ajoute item[cle_normalisee] = item[cle_brute] en % du max observé
-    dans `items`. Suppose cle_brute >= 0 (sinon utiliser
-    normaliser_min_max). Renvoie ce maximum."""
-    valeurs = [item[cle_brute] for item in items if item.get(cle_brute) is not None]
-    maximum = max(valeurs) if valeurs else 0
-    for item in items:
-        brute = item.get(cle_brute)
-        item[cle_normalisee] = (brute / maximum * echelle) if maximum and brute is not None else 0.0
-    return maximum
+def indice_forme(indice_perf, indice_qual):
+    """Moyenne des rangs percentile de indice_performance et
+    indice_qualite : 50 = forme médiane du groupe, 100 = meilleur du groupe
+    sur les deux plans. indice_niveau (le classement) n'en fait plus
+    partie : c'est un état, pas une forme - le mélanger faisait remonter un
+    joueur bien classé même sans résultats (voire sans aucun match). None
+    si l'un des deux manque (aucun match)."""
+    if indice_perf is None or indice_qual is None:
+        return None
+    return (indice_perf + indice_qual) / 2
 
 
-def normaliser_min_max(items, cle_brute, cle_normalisee, echelle=100):
-    """Comme normaliser(), mais ramène [min, max] observé sur [0, echelle]
-    plutôt que value/max - nécessaire pour indice_qualite (un solde de
-    points de cote qui peut être négatif : diviser par le max donnerait des
-    valeurs négatives et casserait l'hypothèse "0 à 100" utilisée partout
-    ailleurs). Si tout le monde a la même valeur (ex: tout le monde à 0 en
-    tout début de saison), tout le monde reçoit 50 (ni pénalisé ni
-    avantagé) plutôt qu'une division par zéro. Renvoie (min, max)."""
-    valeurs = [item[cle_brute] for item in items if item.get(cle_brute) is not None]
-    minimum = min(valeurs) if valeurs else 0
-    maximum = max(valeurs) if valeurs else 0
-    etendue = maximum - minimum
+def rang_percentile(items, cle_brute, cle_normalisee):
+    """item[cle_normalisee] = rang percentile (0-100) de item[cle_brute]
+    parmi les items qui ont une valeur (None -> None) : 0 = le plus bas du
+    groupe, 100 = le plus haut, 50 = la médiane, ex aequo au rang moyen.
+    Plutôt que "% du max" (l'ancienne normalisation) : un seul joueur
+    exceptionnel écrasait toute l'échelle vers le bas, et "50" ne voulait
+    pas dire "dans la moyenne"."""
+    valeurs = sorted(item[cle_brute] for item in items if item.get(cle_brute) is not None)
+    n = len(valeurs)
     for item in items:
         brute = item.get(cle_brute)
         if brute is None:
-            item[cle_normalisee] = 0.0
-        elif not etendue:
-            item[cle_normalisee] = echelle / 2
+            item[cle_normalisee] = None
+        elif n == 1:
+            item[cle_normalisee] = 50.0
         else:
-            item[cle_normalisee] = (brute - minimum) / etendue * echelle
-    return minimum, maximum
+            dessous = sum(1 for v in valeurs if v < brute)
+            egaux = sum(1 for v in valeurs if v == brute)
+            item[cle_normalisee] = (dessous + (egaux - 1) / 2) / (n - 1) * 100
 
 
 def build_tournois(events_par_tableau):
@@ -608,29 +621,25 @@ def _cote_saison_stats(journal_entries):
     statsJoueurs.scrape_player via results.parse_journal_complet) -> min/max/
     moyenne de la cote observée cette saison (le journal de suivi repart à
     zéro à chaque "Initialisation saison", donc pas besoin de filtrer par
-    date ici), + un indice de stabilité.
+    date ici), + l'amplitude (max - min, en points).
 
-    stabilite = 1 - (amplitude / moyenne), borné à 0 : proche de 100% = cote
-    qui a peu varié sur la saison, proche de 0% = grosses variations.
-    Nécessite au moins 2 points de mesure (sinon amplitude=0 donnerait
-    trivialement 100% dès la première mesure, ce qui ne voudrait rien dire -
-    "stable" doit vouloir dire "observé stable dans le temps", pas "une
-    seule observation")."""
+    Amplitude en points plutôt que l'ancienne "stabilité" (1 - amplitude /
+    moyenne) : rapportée à une cote de ~2000, l'amplitude d'une saison
+    donnait 87-100% pour tout le club, sans rien distinguer. Nécessite au
+    moins 2 points de mesure (une seule observation donnerait trivialement
+    0, ce qui ne voudrait rien dire)."""
     cotes = [e["cote"] for e in journal_entries if e.get("cote") is not None]
     if not cotes:
         return {"cote_min": None, "cote_max": None, "cote_moyenne": None,
-                "nb_points_mesure": 0, "stabilite": None}
+                "nb_points_mesure": 0, "amplitude": None}
     cote_min, cote_max = min(cotes), max(cotes)
     cote_moyenne = sum(cotes) / len(cotes)
-    stabilite = None
-    if len(cotes) >= 2 and cote_moyenne:
-        stabilite = max(0.0, 1 - (cote_max - cote_min) / cote_moyenne) * 100
     return {
         "cote_min": cote_min,
         "cote_max": cote_max,
         "cote_moyenne": cote_moyenne,
         "nb_points_mesure": len(cotes),
-        "stabilite": stabilite,
+        "amplitude": (cote_max - cote_min) if len(cotes) >= 2 else None,
     }
 
 
@@ -710,9 +719,13 @@ def build_player_stats(player, events_par_tableau):
             "cote": player["Points Actuel"][tableau],
             "indice_niveau_brut": niveau,
             "indice_performance_brut": indice_performance(stats),
-            "indice_qualite_brut": stats["points_cote_total"],
+            "indice_qualite_brut": indice_qualite(stats),
             "cote_saison": _cote_saison_stats(journal.get(tableau, [])),
             "evolution_mensuelle_cote": evolution_mensuelle_cote(journal.get(tableau, [])),
+            # (date, cote) du plus ancien au plus récent - courbe de cote
+            # semaine par semaine de la page web (voir export_web)
+            "courbe_cote": sorted((e["date"], e["cote"]) for e in journal.get(tableau, [])
+                                  if e.get("cote") is not None and e.get("date") is not None),
             "cote_adverse_moyenne": cote_adverse_moyenne(matchs),
             "meilleure_victoire": meilleure_victoire(matchs),
             "pire_defaite": pire_defaite(matchs),
@@ -768,12 +781,17 @@ def build_player_stats(player, events_par_tableau):
             "mois": parse_date_fr(e["date"]).strftime("%Y-%m"),
             "date": parse_date_fr(e["date"]),
             "evenement": e["evenement"],
+            # numéro de l'équipe du club en interclub ("38-GAB-3 contre
+            # ..." -> 3), None en tournoi individuel
+            "equipe": results.equipe_club(e.get("tableau_ou_rencontre")) if e["est_interclub"] else None,
             "victoire": m["victoire"],
             "sets_detail": m["sets_detail"],
             "est_interclub": e["est_interclub"],
             "intra_club": bool(m["clubs_adverses"]) and all(c == results.MY_CLUB for c in m["clubs_adverses"]),
             "points_cote": m["points_cote"],
             "noms_adverses": m["noms_adverses"],
+            "partenaire_nom": m.get("partenaire_nom"),
+            "forfait": _est_forfait(m),
             "ma_cote": m["ma_cote"],
             "adversaire_cote": m["adversaire_cote"],
         }
@@ -791,7 +809,7 @@ def build_player_stats(player, events_par_tableau):
         "meilleur_partenaire_double_mixte": meilleur_partenaire_dm,
         "meilleur_partenaire_double_mixte_club": meilleur_partenaire_dm_club,
         # "ordre_disciplines" pas rempli ici : ordre_disciplines() se base
-        # sur indice_global, qui n'existe qu'après normaliser_club (voir
+        # sur indice_forme, qui n'existe qu'après normaliser_club (voir
         # plus bas) - rempli par normaliser_club, pas par build_player_stats.
         "progression": diff_classement(player),
         "global": {
@@ -801,40 +819,53 @@ def build_player_stats(player, events_par_tableau):
             "points_meilleur_tableau": player["Points meilleur tableau"],
             "indice_niveau_brut": niveau_global,
             "indice_performance_brut": perf_globale,
-            "indice_qualite_brut": stats_globales["points_cote_total"],
+            "indice_qualite_brut": indice_qualite(stats_globales),
         },
         "tournois": tournois,
         "match_log": match_log,
     }
 
 
-def normaliser_club(all_stats):
-    """Normalise indice_performance, indice_niveau et indice_qualite en %
-    (ou position min-max pour indice_qualite, qui peut être négatif - voir
-    normaliser_min_max) du club (une fois tous les joueurs traités), par
-    tableau et au global, PUIS calcule indice_global à partir des trois
-    valeurs déjà normalisées (voir indice_global - une moyenne n'a de sens
-    que si les trois côtés sont sur la même échelle). Modifie all_stats en
-    place et renvoie les bornes brutes observées."""
-    bornes = {}
-    for tableau in ("Simple", "Double", "Mixte"):
-        entries = [s["par_tableau"][tableau] for s in all_stats]
-        bornes[f"{tableau} - performance"] = normaliser(entries, "indice_performance_brut", "indice_performance")
-        bornes[f"{tableau} - niveau"] = normaliser(entries, "indice_niveau_brut", "indice_niveau")
-        bornes[f"{tableau} - qualite"] = normaliser_min_max(entries, "indice_qualite_brut", "indice_qualite")
-        for entry in entries:
-            entry["indice_global"] = indice_global(
-                entry["indice_performance"], entry["indice_niveau"], entry["indice_qualite"])
+def _groupes_comparaison(all_stats, tableau):
+    """Les joueurs comparés entre eux pour un tableau : même découpage que
+    les onglets (SH/SD, DH/DD, MX) - Simple et Double par genre, Mixte tous
+    ensemble ; tableau=None pour le global (par genre, comme Simple/Double)."""
+    if tableau == "Mixte":
+        return [all_stats]
+    return [[s for s in all_stats if s["Sexe"] == sexe] for sexe in ("H", "F")]
 
-    # les 3 indice_global par tableau sont prêts : c'est seulement
-    # maintenant qu'on peut classer les 3 tableaux d'un joueur entre eux.
+
+def _normaliser_groupe(entries):
+    rang_percentile(entries, "indice_performance_brut", "indice_performance")
+    rang_percentile(entries, "indice_qualite_brut", "indice_qualite")
+    rang_percentile(entries, "indice_niveau_brut", "indice_niveau")
+    for entry in entries:
+        entry["indice_forme"] = indice_forme(entry["indice_performance"], entry["indice_qualite"])
+
+
+def normaliser_club(all_stats):
+    """Convertit indice_performance, indice_qualite et indice_niveau en
+    rang percentile (voir rang_percentile) au sein de chaque groupe de
+    comparaison (voir _groupes_comparaison), par tableau et au global,
+    PUIS calcule indice_forme et l'ordre des tableaux de chaque joueur.
+    Les joueurs sans match dans un tableau sont exclus de la comparaison
+    de ce tableau (indices None), y compris indice_niveau - sinon un
+    tableau jamais joué recevait des indices comme s'il l'avait été.
+    Modifie all_stats en place."""
+    for tableau in ("Simple", "Double", "Mixte"):
+        for groupe in _groupes_comparaison(all_stats, tableau):
+            entries = [s["par_tableau"][tableau] for s in groupe]
+            for entry in entries:
+                if entry["matchs_joues"] == 0:
+                    entry["indice_niveau_brut"] = None
+            _normaliser_groupe(entries)
+
     for s in all_stats:
         s["ordre_disciplines"] = ordre_disciplines(s["par_tableau"])
 
-    globaux = [s["global"] for s in all_stats]
-    bornes["Global - performance"] = normaliser(globaux, "indice_performance_brut", "indice_performance")
-    bornes["Global - niveau"] = normaliser(globaux, "indice_niveau_brut", "indice_niveau")
-    bornes["Global - qualite"] = normaliser_min_max(globaux, "indice_qualite_brut", "indice_qualite")
-    for g in globaux:
-        g["indice_global"] = indice_global(g["indice_performance"], g["indice_niveau"], g["indice_qualite"])
-    return bornes
+    for groupe in _groupes_comparaison(all_stats, None):
+        globaux = [s["global"] for s in groupe]
+        for g in globaux:
+            if g["matchs_joues"] == 0:
+                g["indice_niveau_brut"] = None
+        _normaliser_groupe(globaux)

@@ -11,6 +11,20 @@ from datetime import date
 
 MY_CLUB = "GAB38"
 
+# "GAB38" -> "38-GAB-<n>" : c'est sous cette forme que le site désigne une
+# équipe du club dans la colonne rencontre d'un interclub, ex.
+# "38-GAB-3 contre 74-ABC-2" (vérifié sur les dumps de debug/).
+_EQUIPE_CLUB = re.compile(
+    rf"(?<![\w-]){re.escape(MY_CLUB[-2:])}-{re.escape(MY_CLUB[:-2])}-(\d+)(?![\w-])")
+
+
+def equipe_club(rencontre):
+    """Numéro de l'équipe du club dans une rencontre d'interclub
+    ("38-GAB-3 contre 74-ABC-2" -> 3), None si le club n'y figure pas
+    (joueur prêté à un autre club, format inattendu)."""
+    m = _EQUIPE_CLUB.search(rencontre or "")
+    return int(m.group(1)) if m else None
+
 
 def _parse_date_slash(text):
     """'01/09/2026' -> date(2026, 9, 1)."""
