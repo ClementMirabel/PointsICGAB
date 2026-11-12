@@ -59,6 +59,22 @@ def valeur_ic(tableau, sexe, points_simple, points_double, points_mixte):
     return 57
 
 
+# ICR (Ligue AURA, art. 5 du règlement particulier 2026-2027) : même barème
+# que l'ICN ci-dessus, "calé sur le règlement des Interclubs Nationaux",
+# SAUF le N1 : valeur fixe de 57 points, sans les paliers selon la cote.
+VALEUR_ICR_N1 = 57
+
+
+def valeur_icn(tableau, sexe, points_simple, points_double, points_mixte):
+    """Valeur d'un joueur en Interclubs Nationaux (= valeur_ic)."""
+    return valeur_ic(tableau, sexe, points_simple, points_double, points_mixte)
+
+
+def valeur_icr(tableau):
+    """Valeur d'un joueur en Interclubs Régionaux AURA : N1 = 57 fixe."""
+    return VALEUR_ICR_N1 if tableau == "N1" else VALEUR_IC_PAR_TABLEAU.get(tableau, 0)
+
+
 def new_session():
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
