@@ -10,6 +10,8 @@ injectées à la place de DATA_PLACEHOLDER."""
 import json
 import os
 import re
+
+import requests
 from collections import defaultdict
 from datetime import date, datetime
 
@@ -24,6 +26,10 @@ TABLEAUX = ("Simple", "Double", "Mixte")
 # lien fixe vers l'Excel de la dernière release hebdo (même principe que
 # pointsIC.xlsx dans le README)
 EXCEL_URL = "https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/statsJoueurs.xlsx"
+# page publiée (GitHub Pages, voir le workflow) : on y lit le résumé de
+# l'export précédent pour afficher les écarts d'une semaine sur l'autre
+PAGES_URL = "https://clementmirabel.github.io/PointsICGAB/"
+RESUME_NOM = "statsJoueurs_resume.json"
 
 _DATE_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -213,25 +219,79 @@ def _taux(b):
     return _r(b["victoires"] / b["joues"] * 100) if b["joues"] else None
 
 
-def _club_payload(all_stats):
-    """Agrégats club (ex-onglets Stats club, Tournois et Stats avancées de
-    l'Excel), calculés avec les mêmes fonctions que l'Excel - matchs
-    intra-club exclus, comme dans l'Excel (toujours 1 victoire + 1 défaite
-    pour le club, ne disent rien du niveau face à l'extérieur)."""
-    categories = export_excel.CLUB_CATEGORIES + [export_excel.CATEGORIE_CLUB_TOTAL]
-    matchs_cat = defaultdict(list)
-    for s in all_stats:
-        genre_total = "H (tous tableaux)" if s["Sexe"] == "H" else "F (tous tableaux)"
+def _cle_match(m):
+    """Identifiant d'un match réel : le même dans le match_log de chacun des
+    joueurs du club qui y ont joué (même date, compétition, tableau,
+    adversaires et score vu de leur côté)."""
+    return (m["date"], m["evenement"], m["tableau"], tuple(sorted(m["noms_adverses"])),
+            tuple(tuple(st) for st in m["sets_detail"]))
+
+
+def matchs_club_uniques(all_stats):
+    """Matchs du club comptés UNE fois chacun (un double où jouent deux joueurs
+    du club figure dans les deux match_log : il ne doit compter qu'une fois
+    pour le club), matchs internes exclus. -> [(match, {sexes des joueurs du
+    club ayant joué}, [noms])]."""
+    vus = {}
+    # par nom : le représentant d'un match vu par deux joueurs du club est le
+    # premier par ordre alphabétique - le même que côté page web, où les
+    # joueurs sont aussi triés par nom (listes détaillées cohérentes)
+    for s in sorted(all_stats, key=lambda x: x["Nom"]):
         for m in s["match_log"]:
             if m["intra_club"]:
                 continue
-            matchs_cat[export_excel.CATEGORIE_CLUB_TOTAL].append(m)
-            matchs_cat[genre_total].append(m)
-            if m["tableau"] == "Mixte":
-                matchs_cat["MX"].append(m)
-            else:
-                matchs_cat[m["tableau"][0] + export_excel._GENRE_CODE[s["Sexe"]]].append(m)
-                matchs_cat[f"{m['tableau'][0]} (unisexe)"].append(m)
+            cle = _cle_match(m)
+            if cle not in vus:
+                vus[cle] = (m, set(), [])
+            vus[cle][1].add(s["Sexe"])
+            vus[cle][2].append(s["Nom"])
+    return list(vus.values())
+
+
+def _categories_match(tableau, sexes):
+    """Catégories club d'un match (SH/SD/DH/DD/MX, H/F tous tableaux, S/D
+    unisexe, Club) selon le tableau et les genres des joueurs du club."""
+    cats = [export_excel.CATEGORIE_CLUB_TOTAL]
+    cats += [f"{g} (tous tableaux)" for g in ("H", "F") if g in sexes]
+    if tableau == "Mixte":
+        cats.append("MX")
+    else:
+        cats += [tableau[0] + export_excel._GENRE_CODE[g] for g in ("H", "F") if g in sexes]
+        cats.append(f"{tableau[0]} (unisexe)")
+    return cats
+
+
+def _interclubs_par_categorie(interclubs):
+    """Bilan interclubs par catégorie d'après les feuilles icbad (source de
+    référence : chaque match de chaque rencontre, une fois)."""
+    out = defaultdict(lambda: {"joues": 0, "victoires": 0})
+    for e in (interclubs or {}).get("equipes", []):
+        for r in e["rencontres"]:
+            for m in r["matchs"]:
+                if m["victoire"] is None:
+                    continue
+                t = m["code"][:2]
+                tableau = {"SH": "Simple", "SD": "Simple", "DH": "Double", "DD": "Double"}.get(t, "Mixte")
+                sexes = {"SH": {"H"}, "DH": {"H"}, "SD": {"F"}, "DD": {"F"}}.get(t, {"H", "F"})
+                for cat in _categories_match(tableau, sexes):
+                    out[cat]["joues"] += 1
+                    out[cat]["victoires"] += 1 if m["victoire"] else 0
+    return out
+
+
+def _club_payload(all_stats, interclubs=None):
+    """Agrégats club (ex-onglets Stats club, Tournois et Stats avancées de
+    l'Excel). Chaque match réel compté une fois (voir matchs_club_uniques),
+    matchs internes exclus (toujours 1 victoire + 1 défaite pour le club,
+    ils ne disent rien du niveau face à l'extérieur). Colonnes interclubs :
+    feuilles icbad quand elles sont disponibles."""
+    categories = export_excel.CLUB_CATEGORIES + [export_excel.CATEGORIE_CLUB_TOTAL]
+    matchs_cat = defaultdict(list)
+    for m, sexes, _ in matchs_club_uniques(all_stats):
+        for cat in _categories_match(m["tableau"], sexes):
+            matchs_cat[cat].append(m)
+    ic_icbad = _interclubs_par_categorie(interclubs) if interclubs else None
+    nb_plan = (interclubs or {}).get("equipes_planificateur") or 99
 
     def _bilan(ms):
         return {"joues": len(ms), "victoires": sum(1 for m in ms if m["victoire"])}
@@ -239,11 +299,12 @@ def _club_payload(all_stats):
     par_categorie = []
     for cat in categories:
         ms = matchs_cat.get(cat, [])
-        ic = [m for m in ms if m["est_interclub"]]
+        # interclubs côté myffbad (points de cote) : équipes de la page Interclubs seulement
+        ic = [m for m in ms if m["est_interclub"] and (m.get("equipe") or 99) <= nb_plan]
         par_mois = defaultdict(list)
         for m in ms:
             par_mois[m["mois"]].append(m)
-        total, inter = _bilan(ms), _bilan(ic)
+        total, inter = _bilan(ms), (ic_icbad[cat] if ic_icbad is not None else _bilan(ic))
         pts_t, pts_ic = stats.points_cote_moyens(ms), stats.points_cote_moyens(ic)
         dyn, dvg, clutch = stats.dynamique_match(ms), stats.david_vs_goliath(ms), stats.indice_clutch(ms)
         par_categorie.append({
@@ -269,9 +330,70 @@ def _club_payload(all_stats):
         "sets_point_en_or": {"joues": sum(x["nb_joues"] for x in sets_or),
                              "gagnes": sum(x["nb_gagnes"] for x in sets_or), "joueurs": joueurs_or},
         "tournois": [{**t, "pct": _r(t["pct"]), "points": _r(t["points"])} for t in tournois],
-        "rivalites": export_excel._rivalites_simple(all_stats),
+        "rivalites": rivalites(all_stats),
         "pics_mensuels": [{**p, "delta": _r(p["delta"])} for p in export_excel._pics_mensuels(all_stats)],
     }
+
+
+def rivalites(all_stats):
+    """Confrontations entre joueurs du club (matchs internes), comptées une
+    fois chacune : par tableau (Simple : joueur contre joueur ; Double et
+    Mixte : paire contre paire) et "Tous" (joueur contre joueur, toutes
+    disciplines : en double, chaque joueur d'une paire affronte les deux de
+    l'autre). -> {tableau: [{a, b, total, va, vb, matchs: [...]}]}."""
+    vus = {}
+    for s in all_stats:
+        for m in s["match_log"]:
+            if not m["intra_club"]:
+                continue
+            moi = tuple(sorted([s["Nom"]] + ([m["partenaire_nom"]] if m.get("partenaire_nom") else [])))
+            adv = tuple(sorted(m["noms_adverses"]))
+            if not adv:
+                continue
+            cle = (m["date"], m["evenement"], m["tableau"], frozenset([moi, adv]))
+            if cle not in vus:
+                vus[cle] = {"tableau": m["tableau"], "date": m["date"], "evenement": m["evenement"],
+                            "gagnant": moi if m["victoire"] else adv, "perdant": adv if m["victoire"] else moi,
+                            "score": " / ".join(f"{a}-{b}" if m["victoire"] else f"{b}-{a}" for a, b in m["sets_detail"])}
+
+    def _ajouter(groupes, x, y, match):
+        a, b = sorted([x, y])
+        g = groupes.setdefault((a, b), {"a": " / ".join(a), "b": " / ".join(b), "total": 0, "va": 0, "vb": 0, "matchs": []})
+        g["total"] += 1
+        g["va" if match["gagnant_cote"] == a else "vb"] += 1
+        g["matchs"].append({k: match[k] for k in ("date", "evenement", "tableau", "score")} | {"gagnant": " / ".join(match["gagnant_cote"])})
+
+    out = {t: {} for t in (*TABLEAUX, "Tous")}
+    for v in vus.values():
+        _ajouter(out[v["tableau"]], v["gagnant"], v["perdant"], {**v, "gagnant_cote": v["gagnant"]})
+        for x in v["gagnant"]:
+            for y in v["perdant"]:
+                _ajouter(out["Tous"], (x,), (y,), {**v, "gagnant_cote": (x,)})
+    return {t: sorted(g.values(), key=lambda r: (-r["total"], r["a"])) for t, g in out.items()}
+
+
+def resume(payload):
+    """Chiffres clés d'un export (comparés d'une semaine sur l'autre dans
+    l'Aperçu) - publié à côté de la page (voir le workflow)."""
+    club = next((c for c in payload["club"]["categories"] if c["categorie"] == export_excel.CATEGORIE_CLUB_TOTAL), {})
+    ic = payload.get("interclubs") or {}
+    return {
+        "genere_le": payload["genere_le"],
+        "joueurs_actifs": sum(1 for j in payload["joueurs"] if j["global"]["matchs"]),
+        "matchs": club.get("matchs"), "victoires": club.get("victoires"), "pct": club.get("pct"),
+        "tournois": len(payload["club"]["tournois"]),
+        "rencontres_ic": sum(1 for e in ic.get("equipes", []) for r in e["rencontres"] if r["jouee"]),
+    }
+
+
+def resume_precedent():
+    """Résumé de l'export actuellement publié (la semaine précédente), None
+    si indisponible (première publication, pas de réseau...)."""
+    try:
+        r = requests.get(PAGES_URL + "resume.json", timeout=15)
+        return r.json() if r.ok else None
+    except Exception:
+        return None
 
 
 def _saison(today=None):
@@ -309,7 +431,7 @@ def build_payload(all_stats, interclubs=None, effectif=None):
         "saison": _saison(),
         "excel_url": EXCEL_URL,
         "joueurs": joueurs,
-        "club": _club_payload(all_stats),
+        "club": _club_payload(all_stats, interclubs),
         "interclubs": _interclubs_payload(interclubs, all_stats),
         "effectif": effectif,
     }
@@ -319,7 +441,11 @@ def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interc
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
     assert DATA_PLACEHOLDER in template, f"{DATA_PLACEHOLDER} absent du gabarit {template_path}"
-    data = json.dumps(build_payload(all_stats, interclubs, effectif), ensure_ascii=False, default=_json_default)
+    payload = build_payload(all_stats, interclubs, effectif)
+    payload["precedent"] = resume_precedent()
+    with open(os.path.join(os.path.dirname(os.path.abspath(output_path)), RESUME_NOM), "w", encoding="utf-8") as f:
+        json.dump(resume(payload), f, ensure_ascii=False, default=_json_default)
+    data = json.dumps(payload, ensure_ascii=False, default=_json_default)
     # "</script>" dans un nom de tournoi fermerait la balise : on échappe "</"
     data = data.replace("</", "<\\/")
     with open(output_path, "w", encoding="utf-8") as f:

@@ -1320,15 +1320,21 @@ def _tournois_club(all_stats, min_joueurs=1):
 
     Renvoie la liste des tournois avec au moins `min_joueurs` joueurs du
     club engagés : nom, date (1er jour), joueurs, matchs, victoires, pct."""
-    par_date = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0, "points": 0.0})
+    # un match réel compté une fois (un double à deux joueurs du club figure
+    # dans les deux match_log) ; les points de cote, eux, sont propres à
+    # chaque joueur et s'additionnent
+    par_date = defaultdict(lambda: {"joueurs": set(), "joues": 0, "victoires": 0, "points": 0.0, "cles": set()})
     for s in all_stats:
         for m in s["match_log"]:
             if m["est_interclub"] or m["intra_club"]:
                 continue
             b = par_date[(m["evenement"], m["date"])]
             b["joueurs"].add(s["Nom"])
-            b["joues"] += 1
-            b["victoires"] += 1 if m["victoire"] else 0
+            cle = (m["tableau"], tuple(sorted(m["noms_adverses"])), tuple(tuple(x) for x in m["sets_detail"]))
+            if cle not in b["cles"]:
+                b["cles"].add(cle)
+                b["joues"] += 1
+                b["victoires"] += 1 if m["victoire"] else 0
             b["points"] += m["points_cote"] or 0.0  # points de cote gagnés/perdus par le club
 
     dates_par_nom = defaultdict(list)
@@ -1351,6 +1357,7 @@ def _tournois_club(all_stats, min_joueurs=1):
             candidats.append({
                 "nom": nom, "date": groupe[0], "joueurs": len(joueurs),
                 "matchs": joues, "victoires": victoires, "pct": pct, "points": points,
+                "dates": list(groupe),
             })
     return candidats
 

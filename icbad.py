@@ -314,6 +314,10 @@ def collecter(session=None, club=CLUB, log=print):
         for ligne in div["classement"]:
             if not ligne["club"] or not ligne["equipe_id"]:
                 continue
+            # équipes 7+ (départemental) hors périmètre de la page Interclubs
+            numero_eq = _numero_equipe(ligne["code"])
+            if numero_eq is not None and numero_eq > EQUIPES_PLANIFICATEUR:
+                continue
             log(f"  équipe {ligne['code']} ({div['division']})...")
             page = parse_equipe(_get(session, f"/equipe/{ligne['equipe_id']}"))
             rencontres = []
