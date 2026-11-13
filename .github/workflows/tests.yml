@@ -1,0 +1,25 @@
+name: Tests
+
+# Règles de calcul + parcours de la page dans Chrome, sur des données
+# entièrement fictives (tests/donnees_fictives.py) : pas de connexion myffbad.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t . -v
