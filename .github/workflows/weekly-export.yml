@@ -21,14 +21,40 @@ on:
       - "historique_ic.py"
       - "web/**"
       - "requirements.txt"
+      - "tests/**"
       - ".github/workflows/weekly-export.yml"
+      - ".github/actions/**"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # Mode du run :
+  #  - "complet" (jeudi, lancement manuel, ou push sans dump disponible) :
+  #    récupération myffbad + icbad, ~35 min ;
+  #  - "page" (push sur main) : tests, puis page et Excel régénérés depuis le
+  #    dernier dump (branche "donnees"), sans solliciter myffbad.
+  preparer:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - id: mode
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MODE=complet
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && \
+             gh api "repos/$GITHUB_REPOSITORY/contents/statsJoueurs.json.gz?ref=donnees" --silent 2>/dev/null; then
+            MODE=page
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Mode : $MODE"
+
   export-points:
+    needs: preparer
+    if: ${{ needs.preparer.outputs.mode == 'complet' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -50,10 +76,42 @@ jobs:
           name: pointsIC-xlsx
           path: pointsIC.xlsx
 
+  # export complet : étapes dans .github/actions/export-complet
   export-stats:
+    needs: preparer
+    if: ${{ needs.preparer.outputs.mode == 'complet' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/export-complet
+        with:
+          tentative: "1"
+          licence: ${{ secrets.MYFFBAD_LICENCE }}
+          mot-de-passe: ${{ secrets.MYFFBAD_PASSWORD }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+  # seconde tentative, sur une autre machine (autre adresse IP) : certaines
+  # machines GitHub n'arrivent pas à joindre myffbad.fr
+  export-stats-2:
+    needs: [preparer, export-stats]
+    if: ${{ always() && needs.preparer.outputs.mode == 'complet' && needs.export-stats.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/export-complet
+        with:
+          tentative: "2"
+          licence: ${{ secrets.MYFFBAD_LICENCE }}
+          mot-de-passe: ${{ secrets.MYFFBAD_PASSWORD }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # mode "page" : régénération depuis le dernier dump (aucun accès à myffbad)
+  rebuild:
+    needs: preparer
+    if: ${{ needs.preparer.outputs.mode == 'page' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -64,69 +122,31 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # tests (données fictives, ~20 s) avant tout : une page cassée ne doit
-      # être ni générée pendant 35 min, ni publiée
       - name: Run tests
         run: python -m unittest discover -s tests -t .
 
-      # historique des valeurs IC figées par week-end (historique_ic.py) :
-      # conservé d'une semaine sur l'autre sur la branche "donnees"
-      - name: Fetch IC value history
+      - name: Fetch last dump and history
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git clone --quiet --depth 1 --branch donnees "$URL" "$RUNNER_TEMP/donnees"; then
-            cp "$RUNNER_TEMP/donnees/historique_valeurs.json" . 2>/dev/null || echo "pas encore d'historique"
-          else
-            # branche absente (première fois) : dépôt vide, la branche sera créée au push
-            mkdir -p "$RUNNER_TEMP/donnees" && cd "$RUNNER_TEMP/donnees"
-            git init --quiet -b donnees && git remote add origin "$URL"
-          fi
+          git clone --quiet --depth 1 --branch donnees \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$RUNNER_TEMP/donnees"
+          gunzip -c "$RUNNER_TEMP/donnees/statsJoueurs.json.gz" > statsJoueurs.json
+          cp "$RUNNER_TEMP/donnees/historique_valeurs.json" . 2>/dev/null || true
+          cp "$RUNNER_TEMP/donnees/statsJoueurs_precedent.json" . 2>/dev/null || true
 
-      - name: Run statsJoueurs.py
-        env:
-          MYFFBAD_LICENCE: ${{ secrets.MYFFBAD_LICENCE }}
-          MYFFBAD_PASSWORD: ${{ secrets.MYFFBAD_PASSWORD }}
-        # -u : sortie non bufferisée - sans ça, stdout n'étant pas un
-        # terminal en CI, Python bufferise tout et les logs (statut par
-        # joueur, résumé) ne remontent qu'à la toute fin du run, voire pas
-        # du tout s'il timeout avant - rendant impossible de suivre la
-        # progression ou de diagnostiquer où ça bloque pendant les ~30 min
-        # du run complet.
-        run: python -u statsJoueurs.py
+      - name: Rebuild page and Excel from the dump
+        run: python -u statsJoueurs.py --from-json statsJoueurs.json
 
-      - name: Upload artifact
+      - name: Upload exports
         uses: actions/upload-artifact@v4
         with:
-          name: statsJoueurs-xlsx
+          name: statsJoueurs-page
           path: |
             statsJoueurs.xlsx
             statsJoueurs.html
             statsJoueurs_resume.json
             calendrier-*.ics
-
-      # push simple (jamais forcé) : si la branche a bougé ou n'a pas pu être
-      # lue, le push est refusé plutôt que d'écraser l'historique existant
-      - name: Save IC value history
-        if: ${{ success() && hashFiles('historique_valeurs.json') != '' }}
-        run: |
-          cp historique_valeurs.json "$RUNNER_TEMP/donnees/"
-          cd "$RUNNER_TEMP/donnees"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add historique_valeurs.json
-          if git diff --cached --quiet; then echo "historique inchangé"; exit 0; fi
-          git commit --quiet -m "Valeurs IC figées - export du $(date +%Y-%m-%d)"
-          git push origin donnees
-
-      # dump complet (cache pour --from-json), gardé en artefact du run
-      # seulement - pas publié dans la release
-      - name: Upload JSON dump
-        uses: actions/upload-artifact@v4
-        with:
-          name: statsJoueurs-json
-          path: statsJoueurs.json
 
   # Page web hébergée à adresse fixe (GitHub Pages) : même URL chaque semaine,
   # donc le plan du planificateur IC, enregistré dans le navigateur (clé par
@@ -134,8 +154,8 @@ jobs:
   # mise à jour. Prérequis, une seule fois : Settings > Pages > Source =
   # "GitHub Actions".
   pages:
-    needs: export-stats
-    if: ${{ needs.export-stats.result == 'success' }}
+    needs: [export-stats, export-stats-2, rebuild]
+    if: ${{ always() && contains(needs.*.result, 'success') }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -148,9 +168,10 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      # artefact de la tentative qui a réussi, ou de la régénération
       - uses: actions/download-artifact@v4
         with:
-          name: statsJoueurs-xlsx
+          name: ${{ needs.export-stats.result == 'success' && 'statsJoueurs-export-1' || needs.export-stats-2.result == 'success' && 'statsJoueurs-export-2' || 'statsJoueurs-page' }}
           path: export
 
       - name: Prepare site
@@ -172,17 +193,24 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
 
-  # la release précédente est supprimée puis recréée : seulement si les deux
-  # exports ont réussi, sinon on garderait une release amputée (constaté :
-  # myffbad injoignable -> statsJoueurs.xlsx/html disparus de la release)
+  # la release précédente est supprimée puis recréée : seulement après un
+  # export complet réussi (pointsIC et l'une des deux tentatives), sinon on
+  # garderait une release amputée (constaté : myffbad injoignable ->
+  # statsJoueurs.xlsx/html disparus de la release)
   release:
-    needs: [export-points, export-stats]
-    if: ${{ needs.export-points.result == 'success' && needs.export-stats.result == 'success' }}
+    needs: [export-points, export-stats, export-stats-2]
+    if: ${{ always() && needs.export-points.result == 'success' && (needs.export-stats.result == 'success' || needs.export-stats-2.result == 'success') }}
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: pointsIC-xlsx
+          path: artifacts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.export-stats.result == 'success' && 'statsJoueurs-export-1' || 'statsJoueurs-export-2' }}
           path: artifacts
 
       - name: Delete previous export
@@ -205,7 +233,7 @@ jobs:
   # quand l'export échoue, complétée si l'échec se répète, fermée dès qu'un
   # export repasse
   alerte:
-    needs: [export-points, export-stats, release, pages]
+    needs: [preparer, export-points, export-stats, export-stats-2, rebuild, release, pages]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:
@@ -218,7 +246,10 @@ jobs:
         run: |
           TITRE="Export hebdomadaire en échec"
           RUN="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          ECHECS=$(echo "$RESULTATS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')
+          # un échec de la 1re tentative rattrapé par la 2de n'est pas une alerte
+          ECHECS=$(echo "$RESULTATS" | jq -r '
+            (if .["export-stats-2"].result == "success" then del(.["export-stats"]) else . end)
+            | [to_entries[] | select(.value.result == "failure") | .key] | join(", ")')
           NUM=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITRE\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$ECHECS" ]; then
             CORPS="Jobs en échec : **$ECHECS** ($(date -u '+%d/%m/%Y %H:%M') UTC). Détails : $RUN"

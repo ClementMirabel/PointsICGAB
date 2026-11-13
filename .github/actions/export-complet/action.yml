@@ -1,0 +1,95 @@
+name: Export complet (myffbad + icbad)
+description: >
+  Tests, test de connexion à myffbad, récupération complète (statsJoueurs.py),
+  sauvegarde de l'historique et du dump sur la branche "donnees", artefacts.
+  Utilisée par les deux tentatives du workflow (une par machine GitHub : une
+  adresse IP filtrée par myffbad fait échouer la première, pas la seconde).
+
+inputs:
+  tentative:
+    description: "Numéro de tentative (suffixe des artefacts)"
+    required: true
+  licence:
+    required: true
+  mot-de-passe:
+    required: true
+  token:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r requirements.txt
+
+    # tests (données fictives, ~20 s) avant tout : une page cassée ne doit
+    # être ni générée pendant 35 min, ni publiée
+    - name: Run tests
+      shell: bash
+      run: python -m unittest discover -s tests -t .
+
+    # constaté : certaines machines GitHub n'arrivent pas à joindre
+    # myffbad.fr (connexion qui expire) alors que d'autres, au même moment,
+    # y arrivent. On le détecte en 30 s plutôt qu'après 6 min de réessais,
+    # pour laisser la main à la seconde tentative (autre machine).
+    - name: Check myffbad.fr is reachable
+      shell: bash
+      run: |
+        if ! curl -sS -o /dev/null --max-time 30 --retry 2 --retry-delay 5 --retry-all-errors https://myffbad.fr/; then
+          echo "::error::myffbad.fr injoignable depuis cette machine (tentative ${{ inputs.tentative }})"
+          exit 1
+        fi
+
+    # historique (valeurs figées, instantanés) et dump : branche "donnees"
+    - name: Fetch data branch
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+        if git clone --quiet --depth 1 --branch donnees "$URL" "$RUNNER_TEMP/donnees"; then
+          cp "$RUNNER_TEMP/donnees/historique_valeurs.json" . 2>/dev/null || echo "pas encore d'historique"
+        else
+          # branche absente (première fois) : dépôt vide, la branche sera créée au push
+          mkdir -p "$RUNNER_TEMP/donnees" && cd "$RUNNER_TEMP/donnees"
+          git init --quiet -b donnees && git remote add origin "$URL"
+        fi
+
+    # -u : sortie non bufferisée, pour suivre la progression dans les logs
+    - name: Run statsJoueurs.py
+      shell: bash
+      env:
+        MYFFBAD_LICENCE: ${{ inputs.licence }}
+        MYFFBAD_PASSWORD: ${{ inputs.mot-de-passe }}
+      run: python -u statsJoueurs.py
+
+    - name: Upload exports
+      uses: actions/upload-artifact@v4
+      with:
+        name: statsJoueurs-export-${{ inputs.tentative }}
+        path: |
+          statsJoueurs.xlsx
+          statsJoueurs.html
+          statsJoueurs_resume.json
+          calendrier-*.ics
+
+    # push simple (jamais forcé) : si la branche a bougé ou n'a pas pu être
+    # lue, le push est refusé plutôt que d'écraser l'historique existant.
+    # Le dump (compressé) permet aux pushes de régénérer la page sans myffbad.
+    - name: Save history and dump to the data branch
+      shell: bash
+      run: |
+        gzip -9 -c statsJoueurs.json > "$RUNNER_TEMP/donnees/statsJoueurs.json.gz"
+        cp historique_valeurs.json statsJoueurs_precedent.json "$RUNNER_TEMP/donnees/"
+        cd "$RUNNER_TEMP/donnees"
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add historique_valeurs.json statsJoueurs.json.gz statsJoueurs_precedent.json
+        if git diff --cached --quiet; then echo "rien de nouveau"; exit 0; fi
+        git commit --quiet -m "Export du $(date +%Y-%m-%d) : historique et dump"
+        git push origin donnees

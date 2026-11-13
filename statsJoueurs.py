@@ -15,6 +15,7 @@ Nécessite une connexion à myffbad.fr ("Résultats" et l'historique de
 classement ne sont pas publics, contrairement à pointsIC.py) : licence et
 mot de passe via MYFFBAD_LICENCE/MYFFBAD_PASSWORD, ou saisie interactive.
 """
+import json
 import os
 import sys
 import time
@@ -908,12 +909,13 @@ def collecter_interclubs():
         return None
 
 
-def ecrire_exports(all_stats, interclubs=None, effectif=None, historique=None):
+def ecrire_exports(all_stats, interclubs=None, effectif=None, historique=None, precedent=None):
     """Excel + page web (HTML autonome) - all_stats déjà normalisé."""
     output_path = os.path.join(APP_DIR, "statsJoueurs.xlsx")
     export_excel.write_stats_excel(all_stats, output_path)
     html_path = export_web.write_stats_html(all_stats, os.path.join(APP_DIR, "statsJoueurs.html"),
-                                            interclubs=interclubs, effectif=effectif, historique=historique)
+                                            interclubs=interclubs, effectif=effectif, historique=historique,
+                                            precedent=precedent)
     print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}, {html_path}")
 
 
@@ -934,7 +936,14 @@ def main_from_json(path):
     stats.normaliser_club(all_stats)
     # historique local en lecture seule : le figer ici daterait les valeurs d'aujourd'hui
     historique = historique_ic.charger(os.path.join(APP_DIR, historique_ic.FICHIER))
-    ecrire_exports(all_stats, interclubs, effectif, historique)
+    # même référence que l'export complet pour les écarts de l'Aperçu (sinon
+    # la page se comparerait à son propre résumé publié)
+    precedent = None
+    chemin_prec = os.path.join(APP_DIR, export_web.PRECEDENT_NOM)
+    if os.path.exists(chemin_prec):
+        with open(chemin_prec, encoding="utf-8") as f:
+            precedent = json.load(f) or {}
+    ecrire_exports(all_stats, interclubs, effectif, historique, precedent)
 
 
 if __name__ == "__main__":

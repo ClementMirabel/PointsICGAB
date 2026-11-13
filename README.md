@@ -43,7 +43,12 @@ Liens fixes, toujours vers la dernière version :
 
 ### Fonctionnement
 
-Le workflow [`weekly-export.yml`](.github/workflows/weekly-export.yml) tourne chaque jeudi à 01:00 UTC, et à chaque push sur `main` qui touche le code :
+Le workflow [`weekly-export.yml`](.github/workflows/weekly-export.yml) a deux modes :
+
+- **export complet** — chaque jeudi à 01:00 UTC, ou lancement manuel (Actions → « Run workflow ») : étapes ci-dessous, ~35 min. Certaines machines GitHub n'arrivent pas à joindre myffbad.fr : un test de connexion (30 s) le détecte et l'export est relancé une fois sur une autre machine ([`export-complet`](.github/actions/export-complet/action.yml), utilisé par les deux tentatives) ;
+- **régénération** — à chaque push sur `main` qui touche le code : tests, puis page et Excel recalculés depuis le dump du dernier export complet (`--from-json`), sans accès à myffbad (~2 min). Si aucun dump n'existe encore, le push lance un export complet.
+
+Export complet :
 
 1. `pointsIC.py` : roster public du club → `pointsIC.xlsx`.
 2. `statsJoueurs.py` :
@@ -51,7 +56,7 @@ Le workflow [`weekly-export.yml`](.github/workflows/weekly-export.yml) tourne ch
    - connexion à myffbad (Selenium) et récupération des résultats de la saison, de la cote et de l'historique de classement des joueurs classés R6 ou mieux, puis résultats seuls des autres joueurs d'interclubs (points de cote) ;
    - calcul des stats (`stats.py`), de l'Excel (`export_excel.py`) et de la page (`export_web.py` + gabarit [`web/statsJoueurs.template.html`](web/statsJoueurs.template.html)) ;
    - valeurs des joueurs figées pour les week-ends d'interclubs terminés (`historique_ic.py`).
-3. Publication : la page sur **GitHub Pages**, les fichiers Excel dans la release `weekly-data` (remplacée seulement si les deux exports ont réussi).
+3. Publication : la page sur **GitHub Pages**, les fichiers Excel dans la release `weekly-data` (remplacée seulement par un export complet réussi ; une régénération ne publie que la page).
 
 Données conservées entre deux runs :
 
@@ -59,12 +64,13 @@ Données conservées entre deux runs :
 |---|---|---|
 | `historique_valeurs.json` | branche `donnees` du dépôt | valeurs figées par week-end d'interclubs, et instantané de chaque export (cotes de tout l'effectif → cotes J-10 ; indices de forme → tendances) |
 | `resume.json` | publié avec la page | chiffres clés, comparés par l'export suivant (Aperçu) |
-| `statsJoueurs.json` | artefact du run | dump complet, pour régénérer sans re-scraper |
+| `statsJoueurs.json.gz` | branche `donnees` | dump du dernier export complet, utilisé par les régénérations |
+| `statsJoueurs_precedent.json` | branche `donnees` | résumé auquel ce dump a été comparé : une régénération garde les mêmes écarts dans l'Aperçu |
 
 ### Tests et alertes
 
-- `python -m unittest discover -s tests -t .` : règles de calcul et parcours de la page dans Chrome, sur des données **entièrement fictives** (`tests/donnees_fictives.py`). Lancés à chaque push (workflow `tests.yml`) et au début de l'export du jeudi, qui s'arrête si un test échoue.
-- Si l'export échoue, une issue « Export hebdomadaire en échec » est ouverte (notification GitHub par mail), puis fermée automatiquement au premier export réussi.
+- `python -m unittest discover -s tests -t .` : règles de calcul et parcours de la page dans Chrome, sur des données **entièrement fictives** (`tests/donnees_fictives.py`). Lancés à chaque push (workflow `tests.yml`) et avant chaque export ou régénération, qui s'arrête si un test échoue.
+- Si l'export échoue (y compris sa seconde tentative), une issue « Export hebdomadaire en échec » est ouverte (notification GitHub par mail), puis fermée automatiquement au premier export réussi.
 - La page tient dans un seul fichier HTML (~1,4 Mo mi-novembre, ~200 Ko transférés grâce à la compression) ; un test alerte au-delà de 8 Mo.
 
 ### Prérequis du dépôt
@@ -84,4 +90,4 @@ python statsJoueurs.py --from-json statsJoueurs.json  # régénère Excel + page
 python icbad.py                          # interclubs seuls -> icbad.json
 ```
 
-Pour itérer sur la page : récupérer le dump `statsJoueurs.json` (artefact « statsJoueurs-json » d'un run), puis `--from-json`.
+Pour itérer sur la page : récupérer `statsJoueurs.json.gz` sur la branche `donnees`, le décompresser, puis `--from-json`.

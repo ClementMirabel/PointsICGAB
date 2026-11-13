@@ -31,6 +31,10 @@ EXCEL_URL = "https://github.com/ClementMirabel/PointsICGAB/releases/download/wee
 # l'export précédent pour afficher les écarts d'une semaine sur l'autre
 PAGES_URL = "https://clementmirabel.github.io/PointsICGAB/"
 RESUME_NOM = "statsJoueurs_resume.json"
+# résumé de l'export précédent utilisé par cet export : conservé avec le dump,
+# pour qu'une page régénérée plus tard (--from-json) compare toujours à la
+# même référence, et non à son propre résumé
+PRECEDENT_NOM = "statsJoueurs_precedent.json"
 
 _DATE_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -543,13 +547,18 @@ def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
     }
 
 
-def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interclubs=None, effectif=None, historique=None):
+def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interclubs=None, effectif=None, historique=None,
+                     precedent=None):
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
     assert DATA_PLACEHOLDER in template, f"{DATA_PLACEHOLDER} absent du gabarit {template_path}"
     payload = build_payload(all_stats, interclubs, effectif, historique)
-    payload["precedent"] = resume_precedent()
-    with open(os.path.join(os.path.dirname(os.path.abspath(output_path)), RESUME_NOM), "w", encoding="utf-8") as f:
+    dossier = os.path.dirname(os.path.abspath(output_path))
+    # precedent fourni ({} = « aucun » connu) : pas d'appel réseau
+    payload["precedent"] = (precedent or None) if precedent is not None else resume_precedent()
+    with open(os.path.join(dossier, PRECEDENT_NOM), "w", encoding="utf-8") as f:
+        json.dump(payload["precedent"], f, ensure_ascii=False, default=_json_default)
+    with open(os.path.join(dossier, RESUME_NOM), "w", encoding="utf-8") as f:
         json.dump(resume(payload), f, ensure_ascii=False, default=_json_default)
     calendriers_ics(interclubs, os.path.dirname(os.path.abspath(output_path)))
     # JSON compact (sans espaces) : ~10 % de moins à charger

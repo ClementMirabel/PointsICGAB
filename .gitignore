@@ -6,6 +6,8 @@ statsJoueurs.html
 statsJoueurs.json
 icbad.json
 statsJoueurs_resume.json
+statsJoueurs_precedent.json
+statsJoueurs.json.gz
 historique_valeurs.json
 calendrier-*.ics
 ~$*.xlsx
