@@ -180,6 +180,14 @@ table.t td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-al
 table.t td.r, table.t th.r { text-align: right; }
 table.t tr.few td { color: var(--muted); }
 table.t tr.club td { background: var(--accent-wash); }
+/* ligne de totaux, séparée du corps du tableau */
+abbr.jeune { text-decoration: none; display: inline-block; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 4px; border-radius: 3px;
+  background: var(--we); color: #fff; vertical-align: 1px; cursor: help; }
+.prof { padding: 3px 6px; border-radius: 4px; margin-top: 6px; }
+.prof.ok { background: rgba(12,163,12,.10); }
+.prof.warn { background: rgba(250,178,25,.16); }
+.prof.ko { background: rgba(208,59,59,.12); }
+table.t tfoot td { border-top: 2px solid var(--axis); border-bottom: 0; font-weight: 600; }
 /* planificateur */
 /* colonnes fixées par le nombre d'équipes du week-end (voir colsPlan) : 6 -> 2 lignes de 3 */
 .plan-grid { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
@@ -538,7 +546,7 @@ function renderJoueur(j) {
   const hero = `
     <div class="card hero">
       <div class="who">
-        <h2>${esc(j.nom)}</h2>
+        <h2>${esc(j.nom)}${badgeJeune(j.licence, j.nom)}</h2>
         <div class="badges">${T.map(t => rankBadge(t, tab[t].classement)).join("")}</div>
         <div class="small muted" style="margin-top:8px">${(() => {
           // feuilles de rencontre icbad en priorité (font foi pour l'équipe),
@@ -830,7 +838,8 @@ function drawMatchs(j) {
 state.tri = {};
 /* cols : [{k, label, val: r => valeur de tri, html?: r => cellule, num?, nd?, sm? (masquée sur mobile), title?}] */
 function sortableTable(el, key, cols, rows, opts = {}) {
-  const { defaut = { cle: cols[0].k, sens: 1 }, rowClass = () => "", lien = null, rang = false } = opts;
+  // pied : ligne de totaux (tfoot), chaque colonne la remplit avec c.pied() ; jamais triée
+  const { defaut = { cle: cols[0].k, sens: 1 }, rowClass = () => "", lien = null, rang = false, pied = false } = opts;
   if (!rows.length) { el.innerHTML = `<div class="empty">Aucune donnée.</div>`; return; }
   const tri = state.tri[key] || (state.tri[key] = { ...defaut });
   const col = cols.find(c => c.k === tri.cle) || cols[0];
@@ -843,7 +852,8 @@ function sortableTable(el, key, cols, rows, opts = {}) {
   el.innerHTML = `<table class="t"><thead><tr>${rang ? '<th class="r">#</th>' : ""}${cols.map(c =>
     `<th class="sortable ${c.num ? "r" : ""} ${c.sm ? "hide-sm" : ""}" data-k="${c.k}" ${c.title ? `title="${esc(c.title)}"` : ""}>${c.label}${c.k === tri.cle ? (tri.sens < 0 ? " ↓" : " ↑") : ""}</th>`).join("")}</tr></thead><tbody>
     ${sorted.map((r, i) => `<tr class="${rowClass(r)} ${lien ? "click" : ""}" ${lien ? `data-href="${lien(r)}"` : ""}>${rang ? `<td class="r num muted">${i + 1}</td>` : ""}${cols.map(c =>
-      `<td class="${c.num ? "r num" : ""} ${c.sm ? "hide-sm" : ""}">${cell(c, r)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+      `<td class="${c.num ? "r num" : ""} ${c.sm ? "hide-sm" : ""}">${cell(c, r)}</td>`).join("")}</tr>`).join("")}</tbody>
+    ${pied ? `<tfoot><tr>${rang ? "<td></td>" : ""}${cols.map(c => `<td class="${c.num ? "r num" : ""} ${c.sm ? "hide-sm" : ""}">${c.pied ? c.pied() : ""}</td>`).join("")}</tr></tfoot>` : ""}</table>`;
   el.onclick = e => {
     const th = e.target.closest("th[data-k]");
     if (th) {
@@ -886,7 +896,7 @@ function pairedBars(el, items, series, { max = 100, valFmt = v => pct(v) } = {})
 /* ---------- page club */
 const ONGLETS = { SH: ["Simple", "H"], SD: ["Simple", "F"], DH: ["Double", "H"], DD: ["Double", "F"], MX: ["Mixte", null] };
 const SOUS_PAGES = [["apercu", "Aperçu"], ["classement", "Classement"], ["competitions", "Compétitions"],
-  ["categories", "Stats club"], ["profil", "Profil de jeu"], ["records", "Records"]];
+  ["categories", "Stats club"], ["profil", "Profil de jeu"], ["records", "Records"], ["suivi", "Suivi"], ["paires", "Paires"]];
 const CC = { weekend: "var(--we)", soiree: "var(--so)", interclub: "var(--ic)" };
 const CL = { weekend: "Tournois week-end", soiree: "Tournois en soirée", interclub: "Interclubs" };
 const CAT_LABEL = { "H (tous tableaux)": "Hommes (tous tableaux)", "F (tous tableaux)": "Femmes (tous tableaux)",
@@ -905,7 +915,7 @@ function renderClub(sous, reste = []) {
   if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1], reste[2]);
   if (sous === "tournoi") return clubTournoi($("#club"), reste[0]);
   ({ apercu: clubApercu, classement: clubClassement, competitions: clubCompetitions,
-     categories: clubCategories, profil: clubProfil, records: clubRecords })[sous]($("#club"));
+     categories: clubCategories, profil: clubProfil, records: clubRecords, suivi: clubSuivi, paires: clubPaires })[sous]($("#club"));
 }
 
 /* matchs du club comptés UNE fois chacun (un double à deux joueurs du club
@@ -977,12 +987,21 @@ function clubApercu(el) {
 
 /* courbe simple sur des catégories (mois) : une série, points survolables -
    alignée sous un histogramme de mêmes catégories (pas de double échelle) */
-function lineCats(el, cats, values, { height = 150, yFmt = v => pct(v), y0 = 0, y1 = 100, color = "var(--club)", catFmt = c => c } = {}) {
-  const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 10, t: 10, b: 26 };
+function lineCats(el, cats, values, { height = 150, yFmt = v => pct(v), y0 = null, y1 = null, color = "var(--club)", catFmt = c => c } = {}) {
+  const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 10, t: 14, b: 26 };
+  // échelle resserrée sur les valeurs (multiples de 5, dans 0-100) : sur 0-100
+  // les variations d'un mois à l'autre étaient invisibles
+  const vs = values.filter(v => v != null);
+  if (y0 == null) y0 = vs.length ? Math.max(0, Math.floor((Math.min(...vs) - 3) / 5) * 5) : 0;
+  if (y1 == null) y1 = vs.length ? Math.min(100, Math.ceil((Math.max(...vs) + 3) / 5) * 5) : 100;
+  if (y1 - y0 < 10) { y0 = Math.max(0, y0 - 5); y1 = Math.min(100, y0 + 10); }
+  const pas = [5, 10, 20, 25].find(p => (y1 - y0) / p <= 4) || 25;
+  const graduations = [];
+  for (let v = Math.ceil(y0 / pas) * pas; v <= y1; v += pas) graduations.push(v);
   const bw = (W - m.l - m.r) / cats.length;
   const X = i => m.l + bw * i + bw / 2, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * (H - m.t - m.b);
   let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img">`;
-  for (const v of [0, 25, 50, 75, 100]) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/>
+  for (const v of graduations) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/>
     <text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" class="num">${v} %</text>`;
   const pts = values.map((v, i) => v == null ? null : [X(i), Y(v), v]).filter(Boolean);
   if (pts.length > 1) svg += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join("")}" fill="none" stroke="${color}" stroke-width="2"/>`;
@@ -1169,17 +1188,17 @@ function clubClassement(el) {
 
 function drawClassement() {
   const overall = state.clubOnglet === "Overall";
-  $("#sexeOverall").innerHTML = overall ? [["tous", "Tous"], ["H", "Hommes"], ["F", "Femmes"]].map(([k, l]) =>
+  $("#sexeOverall").innerHTML = overall ? (AVEC_CATEGORIES ? FILTRES_PUBLIC : FILTRES_PUBLIC.slice(0, 3)).map(([k, l]) =>
     `<button class="chip" data-s="${k}" aria-pressed="${state.overallSexe === k}">${l}</button>`).join("") : "";
   $("#sexeOverall").onclick = e => { const b = e.target.closest("[data-s]"); if (!b) return; state.overallSexe = b.dataset.s; drawClassement(); };
   const forme = [["forme", "Forme", "Indice forme : rang /100 (50 = médiane)"], ["perf", "Perf.", "Taux de victoire lissé, en rang"],
     ["qualite", "Qualité", "Points de cote par match, en rang"], ["niveau", "Niveau", "Classement, en rang"]];
   let rows, cols;
   if (overall) {
-    rows = DATA.joueurs.filter(j => j.global.matchs > 0 && (state.overallSexe === "tous" || j.sexe === state.overallSexe))
+    rows = DATA.joueurs.filter(j => j.global.matchs > 0 && filtrePublic(state.overallSexe, j.licence, j.nom, j.sexe))
       .map(j => ({ j, x: j.global }));
     cols = [
-      { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) },
+      { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) + badgeJeune(r.j.licence, r.j.nom) },
       { k: "sexe", label: "", val: r => r.j.sexe, sm: true },
       { k: "best", label: "Meilleur clt", val: r => r.x.meilleur_tableau, html: r => `<b class="rk" style="background:${rankColor(r.x.meilleur_tableau)}">${esc(r.x.meilleur_tableau || "NC")}</b>` },
       { k: "fort", label: "Tableau fort", val: r => r.j.ordre[0], sm: true,
@@ -1192,7 +1211,7 @@ function drawClassement() {
     const [t, sexe] = ONGLETS[state.clubOnglet];
     rows = DATA.joueurs.filter(j => (!sexe || j.sexe === sexe) && j.tableaux[t].matchs > 0).map(j => ({ j, x: j.tableaux[t] }));
     cols = [
-      { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) },
+      { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) + badgeJeune(r.j.licence, r.j.nom) },
       { k: "clt", label: "Clt", val: r => r.x.cote, html: r => `<b class="rk" style="background:${rankColor(r.x.classement)}">${esc(r.x.classement || "NC")}</b>` },
       { k: "cote", label: "Cote", val: r => r.x.cote, num: true },
       { k: "diff", label: "Δ cote", val: r => r.x.diff_cote, html: r => `<span class="${deltaCls(r.x.diff_cote)}">${signed(r.x.diff_cote)}</span>`, num: true },
@@ -1490,7 +1509,7 @@ const hrefJoueur = (licence, nom) => {
 };
 const lienJoueurIC = (licence, nom, court = false) => {
   const h = hrefJoueur(licence, nom), t = esc(court ? nomCourt(nom) : nom);
-  return h ? `<a href="${h}">${t}</a>` : t;
+  return (h ? `<a href="${h}">${t}</a>` : t) + badgeJeune(licence, nom);
 };
 /* matchs d'interclub d'un joueur d'après les feuilles icbad : [{e, r, m, moi, partenaire}] */
 function matchsICDe(licence, nom) {
@@ -1535,7 +1554,7 @@ function renderJoueurIC(x) {
     `<option value="${y.licence}" ${y.licence === x.licence ? "selected" : ""}>${esc(y.nom)}</option>`).join("")}</select>`;
   $("#main").innerHTML = pick + `
     <div class="card hero">
-      <div class="who"><h2>${esc(x.nom)}</h2>
+      <div class="who"><h2>${esc(x.nom)}${badgeJeune(x.licence, x.nom)}</h2>
         <div class="badges">${T.map((t, i) => rankBadge(t, (x.classements[i] || {}).classement)).join("")}</div>
         <div class="small muted" style="margin-top:8px">Fiche interclubs : la fiche complète (résultats de la saison, cote, indices) n'est générée que pour les joueurs classés R6 ou mieux dont le profil myffbad est public.
           · <a href="https://myffbad.fr/joueur/${esc(x.licence)}" target="_blank" rel="noopener">profil myffbad</a></div></div>
@@ -1560,11 +1579,11 @@ function renderIC(sous, id) {
     return;
   }
   if (sous === "adv") { $("#main").innerHTML = `<div id="icPage"></div>`; return icAdversaire($("#icPage"), id); }
-  const num = +sous;
+  const num = +sous, pilot = sous === "pilotage";
   const equipe = IC.equipes.find(e => e.numero === num);
-  $("#main").innerHTML = `<nav class="chips subnav"><a class="chip ${!equipe ? "on" : ""}" href="#ic">Vue globale</a>${IC.equipes.map(e =>
+  $("#main").innerHTML = `<nav class="chips subnav"><a class="chip ${!equipe && !pilot ? "on" : ""}" href="#ic">Vue globale</a><a class="chip ${pilot ? "on" : ""}" href="#ic/pilotage">Pilotage</a>${IC.equipes.map(e =>
     `<a class="chip ${equipe === e ? "on" : ""}" href="#ic/${e.numero}">Équipe ${e.numero} <span class="muted">· ${esc(e.division)}</span></a>`).join("")}</nav><div id="icPage"></div>`;
-  (equipe ? icEquipe : icGlobal)($("#icPage"), equipe);
+  (pilot ? icPilotage : equipe ? icEquipe : icGlobal)($("#icPage"), equipe);
 }
 
 /* -- fiche adversaire : classement, résultats de poule, composition type, effectif, confrontations avec le GAB */
@@ -1670,14 +1689,16 @@ function icGlobal(el) {
     <p class="hint">Source : <a href="${esc(IC.url)}" target="_blank" rel="noopener">icbad.ffbad.org</a> (feuilles de rencontre) ; points de cote : résultats joueurs myffbad.</p>`;
 
   sortableTable($("#icEquipes"), "icEquipes", [
-    { k: "n", label: "Équipe", val: r => r.numero, html: r => `<span class="eq">Équipe ${r.numero}</span>` },
+    { k: "n", label: "Équipe", val: r => r.numero, html: r => `<span class="eq">Équipe ${r.numero}</span>`, pied: () => "Total" },
     { k: "div", label: "Division", val: r => r.division, title: "", html: r => `<span title="${esc(r.division_titre)}">${esc(r.division)}</span>` },
     { k: "rang", label: "Clt", val: r => r.rang, html: r => `${ordinal(r.rang)} <span class="muted small">/ ${r.nb_equipes}</span>`, num: true },
-    { k: "vnd", label: "V-N-D", val: r => vnd(icRencontresJouees(r)).V, html: r => { const x = vnd(icRencontresJouees(r)); return `${x.V}-${x.N}-${x.D}`; }, num: true },
+    { k: "vnd", label: "V-N-D", val: r => vnd(icRencontresJouees(r)).V, html: r => { const x = vnd(icRencontresJouees(r)); return `${x.V}-${x.N}-${x.D}`; }, num: true,
+      pied: () => `${g.V}-${g.N}-${g.D}` },
     ...slots.map(s => ({ k: "s" + s.cle, label: s.label, val: r => vj(icMatchs(r).filter(m => slotCle(m.code) === s.cle)).pct,
-      html: r => cellVJ(vj(icMatchs(r).filter(m => slotCle(m.code) === s.cle))), num: true })),
-    { k: "tot", label: "Total", val: r => vj(icMatchs(r)).pct, html: r => `<b>${cellVJ(vj(icMatchs(r)))}</b>`, num: true },
-  ], IC.equipes, { defaut: { cle: "n", sens: 1 }, lien: r => "#ic/" + r.numero });
+      html: r => cellVJ(vj(icMatchs(r).filter(m => slotCle(m.code) === s.cle))), num: true,
+      pied: () => cellVJ(vj(tous.filter(m => slotCle(m.code) === s.cle))) })),
+    { k: "tot", label: "Total", val: r => vj(icMatchs(r)).pct, html: r => `<b>${cellVJ(vj(icMatchs(r)))}</b>`, num: true, pied: () => cellVJ(vj(tous)) },
+  ], IC.equipes, { defaut: { cle: "n", sens: 1 }, lien: r => "#ic/" + r.numero, pied: true });
 
   const drawJoueurs = () => {
     const tousJ = !!state.icTousJoueurs, n3 = joueurs.filter(x => x.matchs >= 3).length;
@@ -2211,7 +2232,7 @@ function planWeekend(el, w, wes) {
             ? `<div class="bandeau">⛔ Interdit en équipe ${n} : ${esc(b.motif)}</div>`
             : b.devientBrule
               ? `<div class="bandeau jaune">⚠ Après ce week-end, ne pourra plus jouer en équipe${b.nouvelles.length > 1 ? "s" : ""} ${plages(b.nouvelles)}</div>` : "";
-          return `<div class="pj ${b.bloque ? "alerte" : b.devientBrule ? "alerte-jaune" : ""}" draggable="true" data-lic="${p.licence}"><span>${esc(p.nom)}${badgeMute(estMute(p.licence))}</span><span class="muted small">${p.sexe} · ${esc(p.meilleur_tableau || "")}</span>
+          return `<div class="pj ${b.bloque ? "alerte" : b.devientBrule ? "alerte-jaune" : ""}" draggable="true" data-lic="${p.licence}"><span>${esc(p.nom)}${badgeJeune(p.licence, p.nom)}${badgeMute(estMute(p.licence))}</span><span class="muted small">${p.sexe} · ${esc(p.meilleur_tableau || "")}</span>
           <b class="num" title="Valeur ${echelle(n)}">${valeurPour(p, n)}</b><button class="x" data-retirer="${p.licence}" title="Retirer" aria-label="Retirer ${esc(p.nom)}">×</button>${bandeau}</div>`; }).join("") || `<div class="muted small vide">Déposer des joueurs ici</div>`}
         <div class="pied"><span class="${nH >= min.H ? "" : "delta-down"}">${nH} H / ${min.H} min.</span> · <span class="${nF >= min.F ? "" : "delta-down"}">${nF} F / ${min.F} min.</span>
           · valeur ${echelle(n)} <b>${valeurs[n]}</b>${(() => { const nm = ps.filter(p => estMute(p.licence)).length;
@@ -2589,6 +2610,420 @@ function controlesCompo(codes, compo, nos) {
   out.push(statut(mutes.length <= MAX_MUTES, `${mutes.length} muté${mutes.length > 1 ? "s" : ""} aligné${mutes.length > 1 ? "s" : ""}${mutes.length ? ` (${mutes.map(l => esc(nom(l))).join(", ")})` : ""} : ${MAX_MUTES} au maximum par rencontre (${REGLE_MUTES})`));
   if (vides) out.push(statut(false, `${vides} match(s) incomplet(s)`));
   return out.join("");
+}
+
+/* ---------- jeunes : catégorie d'âge FFBaD (colonne "Cat." de la recherche myffbad) */
+const CAT_JEUNES = { Minibad: "U9", Poussin: "U11", Benjamin: "U13", Minime: "U15", Cadet: "U17", Junior: "U19" };
+const _catLic = new Map(), _catNom = new Map();
+for (const p of DATA.effectif || []) if (p.categorie) { _catLic.set(p.licence, p.categorie); _catNom.set(normNom(p.nom), p.categorie); }
+const categorieDe = (licence, nom) => _catLic.get(licence) || (nom ? _catNom.get(normNom(nom)) : null) || null;
+const uDe = cat => cat ? CAT_JEUNES[String(cat).split(" ")[0]] || null : null;
+const estJeune = (licence, nom) => !!uDe(categorieDe(licence, nom));
+const AVEC_CATEGORIES = _catLic.size > 0;
+function badgeJeune(licence, nom) {
+  const c = categorieDe(licence, nom), u = uDe(c);
+  return u ? ` <abbr class="jeune" title="Jeune : ${esc(c)} (${u})">${u}</abbr>` : "";
+}
+/* filtre Tous / Hommes / Femmes / Jeunes (chips) */
+const FILTRES_PUBLIC = [["tous", "Tous"], ["H", "Hommes"], ["F", "Femmes"], ["J", "Jeunes"]];
+const filtrePublic = (k, licence, nom, sexe) => k === "tous" || (k === "J" ? estJeune(licence, nom) : sexe === k);
+function chipsPublic(el, cle, apres) {
+  const choix = AVEC_CATEGORIES ? FILTRES_PUBLIC : FILTRES_PUBLIC.slice(0, 3);
+  el.innerHTML = choix.map(([k, l]) => `<button class="chip" data-p="${k}" aria-pressed="${state[cle] === k}">${l}</button>`).join("");
+  el.onclick = e => { const b = e.target.closest("[data-p]"); if (!b) return; state[cle] = b.dataset.p; chipsPublic(el, cle, apres); apres(); };
+}
+const semainesDepuis = iso => Math.floor((d2(AUJ) - d2(iso)) / 864e5 / 7);
+Object.assign(state, { suiviPublic: "tous", suiviTableau: "Simple", inactifSem: 6, prochePublic: "tous", pairesTableau: "Tous", pairesMin: 3,
+  pilotJamais: "D7", contribMin: 3 });
+
+/* ---------- Club > Suivi : progression de la saison, proches du classement supérieur, inactivité */
+const ORDRE_CLT = ["P12", "P11", "P10", "D9", "D8", "D7", "R6", "R5", "R4", "N3", "N2", "N1"];
+const rangClt = c => ORDRE_CLT.indexOf(c);
+const badgeClt = c => `<b class="rk" style="background:${rankColor(c)}">${esc(c || "NC")}</b>`;
+/* seuil estimé d'un classement : cote la plus basse d'un joueur du club qui
+   l'a déjà, dans le même tableau et le même sexe. Les seuils officiels ne
+   sont pas récupérés : c'est un majorant (le vrai seuil est au plus là). */
+let _seuils = null;
+function seuilsEstimes() {
+  if (_seuils) return _seuils;
+  _seuils = {};
+  for (const p of EFF) for (let i = 0; i < 3; i++) {
+    const c = p.classements?.[i], v = p.cotes?.[i];
+    if (rangClt(c) < 0 || !v) continue;
+    const k = i + p.sexe;
+    _seuils[k] = _seuils[k] || {};
+    if (_seuils[k][c] == null || v < _seuils[k][c]) _seuils[k][c] = v;
+  }
+  return _seuils;
+}
+/* dernier match connu d'un joueur : fiche complète (tournois + IC myffbad), sinon feuilles icbad */
+function dernierMatch(licence, nom) {
+  const f = ficheDe(licence, nom);
+  const dates = [];
+  if (f) for (const m of f.matchs) if (m.date && !m.forfait) dates.push(m.date);
+  for (const x of matchsICDe(licence, nom)) if (x.r.date) dates.push(x.r.date);
+  return dates.sort().pop() || null;
+}
+
+function clubSuivi(el) {
+  el.innerHTML = `
+    <section style="margin-top:0"><h2>Progression depuis septembre</h2>
+      <p class="hint">Cote et classement au 1er septembre et aujourd'hui (joueurs avec une fiche complète). Cliquer une ligne pour la fiche du joueur.</p>
+      <div class="grid g2" id="suiviCartes" style="margin-bottom:14px"></div>
+      <div class="chips" id="suiviTableau" style="margin-bottom:6px"></div>
+      <div class="chips" id="suiviPublic" style="margin-bottom:10px"></div>
+      <div class="card scroll" id="suiviProg"></div></section>
+    <section><h2>Proches du classement supérieur</h2>
+      <p class="hint">Estimation : pour chaque tableau et chaque sexe, le seuil du classement supérieur est approché par la cote la plus basse d'un joueur du club qui l'a déjà.
+        Le vrai seuil est au plus à ce niveau : « au plus 40 pts » veut dire qu'il manque 40 points ou moins. Tout l'effectif, joueurs à moins de 8 % du seuil.</p>
+      <div class="chips" id="procheFiltre" style="margin-bottom:10px"></div>
+      <div class="card scroll" id="suiviProches"></div></section>
+    <section><h2>Sans match récent</h2>
+      <p class="hint">Dernier match connu (tournois et interclubs pour les joueurs avec une fiche complète, feuilles d'interclubs pour les autres). Les joueurs sans aucun match cette saison n'apparaissent que s'ils ont une fiche complète.</p>
+      <div class="chips" id="inactifFiltre" style="margin-bottom:10px"></div>
+      <div class="card scroll" id="suiviInactifs"></div></section>`;
+
+  // cartes : classements gagnés / perdus (tous tableaux)
+  const montees = [], descentes = [];
+  for (const j of DATA.joueurs) for (const t of T) {
+    const x = j.tableaux[t], a = rangClt(x.classement_sept), b = rangClt(x.classement);
+    if (a < 0 || b < 0 || a === b) continue;
+    (b > a ? montees : descentes).push({ j, t, de: x.classement_sept, a: x.classement, n: Math.abs(b - a) });
+  }
+  const carte = (titre, xs, cls) => `<div class="card tcard"><h3>${titre} <span class="muted">· ${xs.length}</span></h3>
+    ${xs.length ? xs.sort((p, q) => q.n - p.n || p.j.nom.localeCompare(q.j.nom, "fr")).slice(0, 12).map(x =>
+      `<div class="row"><span><a href="#joueur/${x.j.licence}">${esc(x.j.nom)}</a>${badgeJeune(x.j.licence, x.j.nom)} <span class="muted small">${x.t}</span></span>
+        <b class="${cls}">${badgeClt(x.de)} → ${badgeClt(x.a)}</b></div>`).join("") + (xs.length > 12 ? `<div class="muted small">… et ${xs.length - 12} autre(s)</div>` : "")
+      : `<div class="muted">Aucun.</div>`}</div>`;
+  $("#suiviCartes").innerHTML = carte("Classements gagnés depuis septembre", montees, "delta-up") + carte("Classements perdus", descentes, "delta-down");
+
+  const drawProg = () => {
+    $("#suiviTableau").innerHTML = T.map(t => `<button class="chip" data-t="${t}" aria-pressed="${state.suiviTableau === t}"><span class="sw" style="background:${TC[t]}"></span>${t}</button>`).join("");
+    const t = state.suiviTableau;
+    const rows = DATA.joueurs.filter(j => filtrePublic(state.suiviPublic, j.licence, j.nom, j.sexe) && j.tableaux[t].diff_cote != null && (j.tableaux[t].matchs > 0 || j.tableaux[t].diff_cote))
+      .map(j => ({ j, x: j.tableaux[t] }));
+    sortableTable($("#suiviProg"), "suiviProg", [
+      { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) + badgeJeune(r.j.licence, r.j.nom) },
+      { k: "sexe", label: "", val: r => r.j.sexe, sm: true },
+      { k: "clt", label: "Clt sept. → auj.", val: r => rangClt(r.x.classement) - rangClt(r.x.classement_sept),
+        html: r => r.x.classement_sept && r.x.classement_sept !== r.x.classement ? `${badgeClt(r.x.classement_sept)} → ${badgeClt(r.x.classement)}` : badgeClt(r.x.classement), num: true },
+      { k: "sept", label: "Cote sept.", val: r => r.x.cote_sept, num: true, sm: true },
+      { k: "cote", label: "Cote", val: r => r.x.cote, num: true },
+      { k: "diff", label: "Δ cote", val: r => r.x.diff_cote, html: r => `<span class="${deltaCls(r.x.diff_cote)}">${signed(r.x.diff_cote)}</span>`, num: true },
+      { k: "m", label: "Matchs", val: r => r.x.matchs, num: true },
+      { k: "pct", label: "% vict.", val: r => r.x.pct, html: r => pct(r.x.pct), num: true, sm: true },
+    ], rows, { defaut: { cle: "diff", sens: -1 }, rang: true, lien: r => "#joueur/" + r.j.licence, rowClass: r => r.x.matchs < PEU_DE_MATCHS ? "few" : "" });
+  };
+  $("#suiviTableau").onclick = e => { const b = e.target.closest("[data-t]"); if (!b) return; state.suiviTableau = b.dataset.t; drawProg(); };
+  chipsPublic($("#suiviPublic"), "suiviPublic", drawProg);
+  drawProg();
+
+  // proches du classement supérieur : tout l'effectif, cotes actuelles
+  const S = seuilsEstimes(), proches = [];
+  for (const p of EFF) for (let i = 0; i < 3; i++) {
+    const c = p.classements?.[i], v = p.cotes?.[i], r = rangClt(c);
+    if (r < 0 || r === ORDRE_CLT.length - 1 || !v) continue;
+    const suivant = ORDRE_CLT[r + 1], seuil = S[i + p.sexe]?.[suivant];
+    if (seuil == null) continue;
+    const ecart = seuil - v;
+    if (ecart / seuil <= 0.08) proches.push({ p, t: T[i], c, suivant, v, seuil, ecart: Math.max(0, ecart) });
+  }
+  const drawProches = () => sortableTable($("#suiviProches"), "suiviProches", [
+    { k: "nom", label: "Joueur", val: r => r.p.nom, html: r => lienJoueurIC(r.p.licence, r.p.nom) },
+    { k: "sexe", label: "", val: r => r.p.sexe, sm: true },
+    { k: "t", label: "Tableau", val: r => r.t, html: r => `<span class="tagsw"><i style="background:${TC[r.t]}"></i>${r.t}</span>` },
+    { k: "clt", label: "Clt → visé", val: r => rangClt(r.c), html: r => `${badgeClt(r.c)} → ${badgeClt(r.suivant)}` },
+    { k: "cote", label: "Cote", val: r => r.v, num: true },
+    { k: "seuil", label: "Seuil estimé", val: r => r.seuil, num: true, sm: true, title: "Cote la plus basse d'un joueur du club déjà à ce classement (même tableau, même sexe)" },
+    { k: "ecart", label: "Manque", val: r => r.ecart, html: r => r.ecart ? `au plus ${fmt(r.ecart)} pts` : `<b class="delta-up">au niveau</b>`, num: true },
+  ], proches.filter(r => filtrePublic(state.prochePublic, r.p.licence, r.p.nom, r.p.sexe)), { defaut: { cle: "ecart", sens: 1 } });
+  chipsPublic($("#procheFiltre"), "prochePublic", drawProches);
+  drawProches();
+
+  // inactivité
+  const candidats = new Map();
+  for (const j of DATA.joueurs) candidats.set(j.licence, { licence: j.licence, nom: j.nom, sexe: j.sexe, best: j.global.meilleur_tableau, matchs: j.global.matchs });
+  for (const x of icJoueurs.values()) if (!ficheDe(x.licence, x.nom) && historiqueIC.has(x.licence)) {
+    const p = effParLic.get(x.licence);
+    candidats.set(x.licence, { licence: x.licence, nom: x.nom, sexe: x.sexe, best: p?.meilleur_tableau, matchs: matchsICDe(x.licence, x.nom).length, icSeul: true });
+  }
+  const inactifs = [...candidats.values()].map(x => { const d = dernierMatch(x.licence, x.nom); return { ...x, dernier: d, sem: d ? semainesDepuis(d) : null }; });
+  const drawInactifs = () => {
+    $("#inactifFiltre").innerHTML = [4, 6, 10].map(n => `<button class="chip" data-n="${n}" aria-pressed="${state.inactifSem === n}">${n} semaines et plus</button>`).join("");
+    sortableTable($("#suiviInactifs"), "suiviInactifs", [
+      { k: "nom", label: "Joueur", val: r => r.nom, html: r => lienJoueurIC(r.licence, r.nom) },
+      { k: "sexe", label: "", val: r => r.sexe || "", sm: true },
+      { k: "best", label: "Meilleur clt", val: r => rangClt(r.best), html: r => badgeClt(r.best) },
+      { k: "dernier", label: "Dernier match", val: r => r.dernier || "", html: r => r.dernier ? fDate(r.dernier) : `<span class="muted">aucun cette saison</span>`, num: true },
+      { k: "sem", label: "Depuis", val: r => r.sem ?? 999, html: r => r.sem == null ? "–" : `${r.sem} sem.`, num: true },
+      { k: "m", label: "Matchs saison", val: r => r.matchs, num: true, sm: true, title: "Fiche complète : tous les matchs ; sinon matchs d'interclubs" },
+    ], inactifs.filter(x => x.sem == null || x.sem >= state.inactifSem), { defaut: { cle: "sem", sens: -1 } });
+  };
+  $("#inactifFiltre").onclick = e => { const b = e.target.closest("[data-n]"); if (!b) return; state.inactifSem = +b.dataset.n; drawInactifs(); };
+  drawInactifs();
+}
+
+/* ---------- Club > Paires : associations de deux joueurs du club en double et en mixte */
+function clubPaires(el) {
+  const club = new Map();
+  for (const p of EFF) club.set(normNom(p.nom), { licence: p.licence, nom: p.nom });
+  for (const j of DATA.joueurs) club.set(normNom(j.nom), { licence: j.licence, nom: j.nom });
+  const cleMatch = m => [m.date, m.evenement, m.tableau, [...m.adversaires].sort().join("|"), m.score].join("#");
+  // matchs uniques d'une paire du club (vu depuis les deux fiches quand les deux en ont une)
+  const vus = new Set(), paires = new Map();
+  for (const j of DATA.joueurs) for (const m of j.matchs) {
+    if (m.tableau === "Simple" || !m.partenaire || m.forfait) continue;
+    const part = club.get(normNom(m.partenaire));
+    if (!part) continue;
+    const cle = cleMatch(m);
+    if (vus.has(cle)) continue;
+    vus.add(cle);
+    const duo = [{ licence: j.licence, nom: j.nom }, part].sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+    const k = duo.map(x => x.nom).join(" / ") + "#" + m.tableau;
+    const x = paires.get(k) || { duo, tableau: m.tableau, n: 0, v: 0, ic: 0, cotes: [], dernier: "" };
+    x.n++; x.v += m.victoire ? 1 : 0; x.ic += m.interclub ? 1 : 0;
+    if (m.cote_adverse != null) x.cotes.push(m.cote_adverse);
+    if (m.date > x.dernier) x.dernier = m.date;
+    paires.set(k, x);
+  }
+  // % de chacun dans le même tableau avec d'autres partenaires
+  const separe = (x) => {
+    let n = 0, v = 0;
+    for (const p of x.duo) {
+      const f = ficheDe(p.licence, p.nom); if (!f) continue;
+      const autre = normNom(x.duo.find(y => y !== p).nom);
+      for (const m of f.matchs) if (m.tableau === x.tableau && !m.forfait && m.partenaire && normNom(m.partenaire) !== autre) { n++; v += m.victoire ? 1 : 0; }
+    }
+    return n ? { n, pct: v / n * 100 } : null;
+  };
+  const rows = [...paires.values()].map(x => ({ ...x, pct: x.v / x.n * 100, sep: separe(x),
+    adv: x.cotes.length ? x.cotes.reduce((a, b) => a + b, 0) / x.cotes.length : null }));
+  for (const r of rows) r.delta = r.sep ? r.pct - r.sep.pct : null;
+
+  el.innerHTML = `<p class="hint">Paires de deux joueurs du club, tournois et interclubs (résultats myffbad des joueurs avec une fiche complète), chaque match compté une fois.
+      « Δ séparés » : % de victoires ensemble moins le % de chacun des deux avec d'autres partenaires dans le même tableau.</p>
+    <div class="grid g3" id="pairesTop" style="margin-bottom:14px"></div>
+    <div class="chips" id="pairesTableau" style="margin-bottom:6px"></div>
+    <div class="chips" id="pairesMin" style="margin-bottom:10px"></div>
+    <div class="card scroll" id="pairesTable"></div>`;
+  const nomPaire = r => r.duo.map(p => lienJoueurIC(p.licence, p.nom)).join(" / ");
+  const lisse = r => (r.v + 2.5) / (r.n + 5) * 100;  // même lissage que l'indice performance
+  const top = (t, titre) => {
+    const xs = rows.filter(r => r.tableau === t && r.n >= 3).sort((a, b) => lisse(b) - lisse(a));
+    const x = xs[0];
+    return `<div class="card fact"><span class="k">${titre}</span>${x ? `<span class="t">${nomPaire(x)}</span><span class="s num">${x.v}/${x.n} · ${pct(x.pct)}</span>` : `<span class="s muted">Aucune paire avec 3 matchs.</span>`}</div>`;
+  };
+  const plusJouee = rows.slice().sort((a, b) => b.n - a.n)[0];
+  $("#pairesTop").innerHTML = top("Double", "Meilleure paire de double") + top("Mixte", "Meilleure paire de mixte")
+    + `<div class="card fact"><span class="k">Paire la plus jouée</span>${plusJouee ? `<span class="t">${nomPaire(plusJouee)}</span><span class="s num">${plusJouee.n} matchs en ${plusJouee.tableau.toLowerCase()}</span>` : "–"}</div>`;
+  const draw = () => {
+    $("#pairesTableau").innerHTML = ["Tous", "Double", "Mixte"].map(t => `<button class="chip" data-t="${t}" aria-pressed="${state.pairesTableau === t}">${t === "Tous" ? "" : `<span class="sw" style="background:${TC[t]}"></span>`}${t}</button>`).join("");
+    $("#pairesMin").innerHTML = [[3, "Au moins 3 matchs"], [1, "Toutes"]].map(([n, l]) => `<button class="chip" data-n="${n}" aria-pressed="${state.pairesMin === n}">${l}</button>`).join("");
+    sortableTable($("#pairesTable"), "paires", [
+      { k: "nom", label: "Paire", val: r => r.duo[0].nom, html: nomPaire },
+      { k: "t", label: "Tableau", val: r => r.tableau, html: r => `<span class="tagsw"><i style="background:${TC[r.tableau]}"></i>${r.tableau}</span>`, sm: true },
+      { k: "n", label: "Matchs", val: r => r.n, num: true },
+      { k: "v", label: "Victoires", val: r => r.v, num: true, sm: true },
+      { k: "pct", label: "% vict.", val: r => lisse(r), html: r => cellVJ({ v: r.v, j: r.n, pct: r.pct }), num: true, title: "Tri sur le % lissé (comme si 5 matchs à 50 % s'ajoutaient)" },
+      { k: "delta", label: "Δ séparés", val: r => r.delta, html: r => r.delta == null ? "–" : `<span class="${deltaCls(r.delta)}" title="${pct(r.sep.pct)} sur ${r.sep.n} matchs avec d'autres partenaires">${signed(r.delta)} pts</span>`, num: true },
+      { k: "adv", label: "Cote adv. moy.", val: r => r.adv, num: true, sm: true },
+      { k: "ic", label: "dont IC", val: r => r.ic, num: true, sm: true },
+      { k: "dernier", label: "Dernier", val: r => r.dernier, html: r => fDate(r.dernier), num: true, sm: true },
+    ], rows.filter(r => (state.pairesTableau === "Tous" || r.tableau === state.pairesTableau) && r.n >= state.pairesMin),
+    { defaut: { cle: "n", sens: -1 }, rowClass: r => r.n < 3 ? "few" : "" });
+  };
+  $("#pairesTableau").onclick = e => { const b = e.target.closest("[data-t]"); if (!b) return; state.pairesTableau = b.dataset.t; draw(); };
+  $("#pairesMin").onclick = e => { const b = e.target.closest("[data-n]"); if (!b) return; state.pairesMin = +b.dataset.n; draw(); };
+  draw();
+}
+
+/* ---------- Interclubs > Pilotage : enjeux de poule, profondeur d'effectif,
+   charge des joueurs, contribution par poste, bilan par adversaire */
+/* équipe principale d'un joueur : celle où il a joué le plus de rencontres
+   (à égalité, la plus haute) ; sinon sa liste d'équipe icbad */
+function equipePrincipale(licence) {
+  const h = historiqueIC.get(licence);
+  if (h) return +Object.entries(h).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+  const x = icJoueurs.get(licence);
+  return x?.equipes?.length ? Math.min(...x.equipes) : null;
+}
+/* bloqué en équipe n après UNE rencontre de plus dans une équipe supérieure où il joue déjà */
+function bientotBloque(c, n) {
+  if (motifInterdit(c, n)) return null;
+  for (const h of NUMEROS_EQUIPES.filter(m => m < n && c.r[m])) {
+    const c2 = { r: { ...c.r, [h]: c.r[h] + 1 }, j: { ...c.j, [h]: (c.j[h] || 0) + 1 } };
+    if (motifInterdit(c2, n)) return h;
+  }
+  return null;
+}
+
+function icPilotage(el) {
+  const equipes = IC.equipes;
+  el.innerHTML = `
+    <section style="margin-top:0"><h2>Enjeux de poule</h2>
+      <p class="hint">Projection : chaque équipe garde son rythme actuel (points par rencontre) jusqu'à la fin de la poule. Rencontres clés (3 prochaines) : adversaires classés juste au-dessus ou juste en dessous, à moins d'une rencontre de points.</p>
+      <div class="card scroll" id="pilotEnjeux"></div></section>
+    <section><h2>Profondeur d'effectif</h2>
+      <p class="hint">Joueurs rattachés à chaque équipe (celle où ils ont joué le plus de rencontres, sinon leur liste icbad), encore autorisés à y jouer.
+        Minimum : joueurs et joueuses nécessaires pour aligner tous les matchs (2 matchs maximum chacun, pas deux dans la même discipline).
+        ⛔ : ne peut plus jouer dans l'équipe ; ⚠ : bloqué après une rencontre de plus en équipe supérieure.</p>
+      <div class="grid g3" id="pilotProfondeur"></div></section>
+    <section><h2>Charge et disponibilité</h2>
+      <p class="hint">Présence : week-ends joués sur les week-ends déjà joués par l'équipe principale du joueur.</p>
+      <div class="card scroll" id="pilotCharge"></div>
+      <h3 style="margin:18px 0 6px">Classés jamais alignés cette saison</h3>
+      <div class="chips" id="pilotJamaisFiltre" style="margin-bottom:10px"></div>
+      <div class="card scroll" id="pilotJamais"></div></section>
+    <section><h2>Contribution par poste</h2>
+      <p class="hint">Victoires / matchs joués à chaque poste. Rencontres serrées : écart final de 2 matchs ou moins (5-3, 4-4…).</p>
+      <div class="chips" id="pilotContribMin" style="margin-bottom:10px"></div>
+      <div class="card scroll" id="pilotContrib"></div></section>
+    <section><h2>Bilan par adversaire</h2>
+      <div class="grid g2"><div class="card scroll" id="pilotClubs"></div><div class="card scroll" id="pilotDeps"></div></div></section>`;
+
+  // 1. enjeux de poule
+  const enjeux = equipes.map(e => {
+    const total = e.rencontres.length;
+    const proj = e.classement.map(c => ({ ...c, rythme: c.j ? c.pts / c.j : 0, final: c.pts + (c.j ? c.pts / c.j : 0) * Math.max(0, total - c.j) }))
+      .sort((a, b) => b.final - a.final);
+    proj.forEach((c, i) => c.rangProj = i + 1);
+    const moi = proj.find(c => c.club && c.code === e.code) || {};
+    const parRang = [...e.classement].sort((a, b) => a.rang - b.rang);
+    const i = parRang.findIndex(c => c.club && c.code === e.code);
+    const dessus = parRang[i - 1], dessous = parRang[i + 1];
+    const demi = formatEquipe(e).length / 2;
+    const cles = e.rencontres.filter(r => !r.jouee).map(r => {
+      const adv = e.classement.find(c => c.equipe_id === r.adversaire_equipe_id || c.code === r.adversaire_code);
+      return { r, adv, cle: adv && Math.abs(adv.rang - e.rang) <= 1 && Math.abs(adv.pts - (moi.pts ?? 0)) <= 2 * demi };
+    }).filter(x => x.cle).slice(0, 3);
+    return { e, moi, dessus, dessous, cles, restantes: e.rencontres.filter(r => !r.jouee).length };
+  });
+  $("#pilotEnjeux").innerHTML = `<table class="t"><thead><tr><th>Équipe</th><th class="r">Clt</th><th class="r">Pts</th><th class="r hide-sm">Rythme</th><th class="r">Projection</th>
+    <th class="r hide-sm">Écart au-dessus</th><th class="r hide-sm">Écart en dessous</th><th>Rencontres clés à venir</th></tr></thead><tbody>
+    ${enjeux.map(({ e, moi, dessus, dessous, cles, restantes }) => `<tr class="click" data-href="#ic/${e.numero}">
+      <td><span class="eq">Équipe ${e.numero}</span> <span class="muted small">${esc(e.division)}</span></td>
+      <td class="r num">${ordinal(e.rang)} <span class="muted small">/ ${e.nb_equipes}</span></td>
+      <td class="r num"><b>${moi.pts ?? "–"}</b> <span class="muted small">${moi.j ?? 0} J.</span></td>
+      <td class="r num hide-sm">${fmt(moi.rythme, 1)} <span class="muted small">/ renc.</span></td>
+      <td class="r num">${restantes ? `${ordinal(moi.rangProj)} <span class="muted small">(${fmt(moi.final)} pts)</span>` : `<span class="muted">terminé</span>`}</td>
+      <td class="r num hide-sm">${dessus ? `<span class="delta-down">${signed(moi.pts - dessus.pts)}</span> <span class="muted small" title="${esc(dessus.nom)}">${esc(dessus.code || "")}</span>` : `<span class="muted">en tête</span>`}</td>
+      <td class="r num hide-sm">${dessous ? `<span class="delta-up">${signed(moi.pts - dessous.pts)}</span> <span class="muted small" title="${esc(dessous.nom)}">${esc(dessous.code || "")}</span>` : `<span class="muted">dernier</span>`}</td>
+      <td>${cles.length ? cles.map(({ r, adv }) => `<div>${r.date ? fDate(r.date) : "–"} · ${lienPlan(e, r, esc(r.adversaire_code || r.adversaire))} <span class="muted small">${ordinal(adv.rang)}, ${adv.pts} pts</span></div>`).join("")
+        : `<span class="muted">${restantes ? "aucune" : "–"}</span>`}</td></tr>`).join("")}</tbody></table>`;
+  $("#pilotEnjeux").onclick = ev => { const tr = ev.target.closest("tr[data-href]"); if (tr && !ev.target.closest("a")) location.hash = tr.dataset.href; };
+
+  // 2. profondeur d'effectif
+  const rattaches = new Map(equipes.map(e => [e.numero, []]));
+  for (const l of licencesIC) {
+    const n = equipePrincipale(l);
+    if (rattaches.has(n)) rattaches.get(n).push(joueurPlan(l) || { licence: l, nom: icJoueurs.get(l)?.nom || l, sexe: icSexe.get(l) });
+  }
+  $("#pilotProfondeur").innerHTML = equipes.filter(e => e.numero <= PLAN_NB).map(e => {
+    const min = effectifMinimum(formatEquipe(e));
+    const ps = rattaches.get(e.numero).map(p => { const c = compteurJoue(p.licence); return { p, bloque: !!motifInterdit(c, e.numero), bientot: bientotBloque(c, e.numero) }; });
+    const ligne = s => {
+      const xs = ps.filter(x => x.p.sexe === s).sort((a, b) => valeurPour(b.p, e.numero) - valeurPour(a.p, e.numero));
+      const dispo = xs.filter(x => !x.bloque).length, m = min[s];
+      const etat = dispo < m ? ["ko", `${dispo} disponible${dispo > 1 ? "s" : ""} pour ${m} nécessaires`]
+        : dispo === m ? ["warn", `${dispo} disponible${dispo > 1 ? "s" : ""}, aucun remplaçant`]
+        : ["ok", `${dispo} disponibles, ${dispo - m} remplaçant${dispo - m > 1 ? "s" : ""}`];
+      return `<div class="prof ${etat[0]}"><b>${s === "H" ? "Hommes" : "Femmes"}</b> <span class="small">${etat[1]} (min. ${m})</span></div>
+        <div class="small" style="margin:2px 0 8px">${xs.map(x => `<span class="${x.bloque ? "muted" : ""}" title="${x.bloque ? "Ne peut plus jouer dans cette équipe" : x.bientot ? `Bloqué après une rencontre de plus en équipe ${x.bientot}` : ""}">${lienJoueurIC(x.p.licence, x.p.nom, true)}${x.bloque ? " ⛔" : x.bientot ? " ⚠" : ""}</span>`).join(", ") || `<span class="muted">aucun</span>`}</div>`;
+    };
+    return `<div class="card tcard"><h3><a class="eq" href="#ic/${e.numero}">Équipe ${e.numero}</a> <span class="muted">${esc(e.division)}</span></h3>${ligne("H")}${ligne("F")}</div>`;
+  }).join("");
+
+  // 3. charge et disponibilité
+  const wesEquipe = new Map(equipes.map(e => [e.numero, new Set(icRencontresJouees(e).filter(r => r.date).map(r => samediDe(r.date)))]));
+  const charge = [...historiqueIC.keys()].map(l => {
+    const ms = [], wes = new Set(), renc = new Set();
+    let dernier = "";
+    for (const e of equipes) for (const r of icRencontresJouees(e)) {
+      const mien = r.matchs.filter(m => m.club.some(p => p.licence === l));
+      if (!mien.length) continue;
+      renc.add(r.id); ms.push(...mien); if (r.date) { wes.add(samediDe(r.date)); if (r.date > dernier) dernier = r.date; }
+    }
+    const n = equipePrincipale(l), ref = wesEquipe.get(n)?.size || 0;
+    const p = joueurPlan(l) || {};
+    return { licence: l, nom: p.nom || icJoueurs.get(l)?.nom || l, sexe: p.sexe || icSexe.get(l), principale: n, wes: wes.size, ref,
+      presence: ref ? Math.min(100, wes.size / ref * 100) : null, renc: renc.size, matchs: ms.filter(m => m.victoire != null).length, dernier };
+  });
+  sortableTable($("#pilotCharge"), "pilotCharge", [
+    { k: "nom", label: "Joueur", val: r => r.nom, html: r => lienJoueurIC(r.licence, r.nom) + badgeMute(estMute(r.licence)) },
+    { k: "sexe", label: "", val: r => r.sexe || "", sm: true },
+    { k: "eq", label: "Équipes", val: r => r.principale, html: r => fmtHistorique(r.licence) },
+    { k: "wes", label: "Week-ends", val: r => r.wes, num: true },
+    { k: "presence", label: "Présence", val: r => r.presence, html: r => r.presence == null ? "–" : `${pct(r.presence)} <span class="muted small">(${r.wes}/${r.ref})</span>`, num: true,
+      title: "Week-ends joués / week-ends joués par son équipe principale" },
+    { k: "renc", label: "Rencontres", val: r => r.renc, num: true, sm: true },
+    { k: "m", label: "Matchs", val: r => r.matchs, num: true },
+    { k: "dernier", label: "Dernière", val: r => r.dernier, html: r => r.dernier ? fDate(r.dernier) : "–", num: true, sm: true },
+  ], charge, { defaut: { cle: "wes", sens: -1 } });
+
+  const drawJamais = () => {
+    const seuils = { R6: 18, D7: 12, D9: 6 };
+    $("#pilotJamaisFiltre").innerHTML = [["R6", "R6 et mieux"], ["D7", "D7 et mieux"], ["D9", "D9 et mieux"]].map(([k, l]) =>
+      `<button class="chip" data-k="${k}" aria-pressed="${state.pilotJamais === k}">${l}</button>`).join("");
+    sortableTable($("#pilotJamais"), "pilotJamais", [
+      { k: "nom", label: "Joueur", val: r => r.nom, html: r => lienJoueurIC(r.licence, r.nom) + badgeMute(estMute(r.licence)) },
+      { k: "sexe", label: "", val: r => r.sexe, sm: true },
+      { k: "clt", label: "Clt S/D/M", val: r => r.icr, html: clsBadges },
+      { k: "icr", label: "ICR", val: r => r.icr, num: true },
+      { k: "liste", label: "Liste icbad", val: r => icJoueurs.get(r.licence)?.equipes?.[0] ?? 99,
+        html: r => icJoueurs.has(r.licence) ? icJoueurs.get(r.licence).equipes.map(n => `<a class="eq" href="#ic/${n}">Éq.${n}</a>`).join(" ") : `<span class="muted">non inscrit</span>`, sm: true },
+      { k: "der", label: "Dernier match", val: r => dernierMatch(r.licence, r.nom) || "", html: r => { const d = dernierMatch(r.licence, r.nom); return d ? fDate(d) : `<span class="muted">inconnu</span>`; }, num: true, sm: true,
+        title: "Connu seulement pour les joueurs avec une fiche complète" },
+    ], EFF.filter(p => !historiqueIC.has(p.licence) && (p.icr || 0) >= seuils[state.pilotJamais]), { defaut: { cle: "icr", sens: -1 } });
+  };
+  $("#pilotJamaisFiltre").onclick = ev => { const b = ev.target.closest("[data-k]"); if (!b) return; state.pilotJamais = b.dataset.k; drawJamais(); };
+  drawJamais();
+
+  // 4. contribution par poste
+  const tous = equipes.flatMap(icMatchs), slots = slotsDe(tous);
+  const serree = r => Math.abs(r.score_club - r.score_adv) <= 2;
+  const contrib = new Map();
+  for (const m of tous) for (const p of m.club) {
+    if (!p.licence) continue;
+    const x = contrib.get(p.licence) || { licence: p.licence, nom: p.nom, ms: [] };
+    x.ms.push(m); contrib.set(p.licence, x);
+  }
+  const lignesContrib = [...contrib.values()].map(x => ({ ...x, b: vj(x.ms), s: vj(x.ms.filter(m => serree(m.r))) }));
+  const drawContrib = () => {
+    $("#pilotContribMin").innerHTML = [[3, "Au moins 3 matchs"], [1, "Tous"]].map(([n, l]) => `<button class="chip" data-n="${n}" aria-pressed="${state.contribMin === n}">${l}</button>`).join("");
+    sortableTable($("#pilotContrib"), "pilotContrib", [
+      { k: "nom", label: "Joueur", val: r => r.nom, html: r => lienJoueurIC(r.licence, r.nom) },
+      { k: "m", label: "Matchs", val: r => r.b.j, num: true },
+      { k: "pct", label: "% vict.", val: r => r.b.pct, html: r => cellVJ(r.b, { pctSeul: true }), num: true },
+      { k: "serr", label: "Renc. serrées", val: r => r.s.j ? r.s.pct : null, html: r => cellVJ(r.s), num: true, title: "Matchs gagnés / joués dans les rencontres finies à 2 matchs d'écart ou moins" },
+      ...slots.map(s => ({ k: "p" + s.cle, label: s.label, val: r => { const b = vj(r.ms.filter(m => slotCle(m.code) === s.cle)); return b.j ? b.pct + b.j / 1000 : null; },
+        html: r => cellVJ(vj(r.ms.filter(m => slotCle(m.code) === s.cle))), num: true, sm: true })),
+    ], lignesContrib.filter(r => r.b.j >= state.contribMin), { defaut: { cle: "m", sens: -1 } });
+  };
+  $("#pilotContribMin").onclick = ev => { const b = ev.target.closest("[data-n]"); if (!b) return; state.contribMin = +b.dataset.n; drawContrib(); };
+  drawContrib();
+
+  // 5. bilan par club adverse et par département
+  const parClub = new Map(), parDep = new Map();
+  for (const e of equipes) for (const r of icRencontresJouees(e)) {
+    const code = r.adversaire_code || "", club = code.replace(/-\d+$/, ""), dep = code.split("-")[0] || "?";
+    const nom = String(r.adversaire || code).replace(/\s*\([^)]*\)\s*$/, "");
+    for (const [map, k, lib] of [[parClub, club, nom], [parDep, dep, dep]]) {
+      const x = map.get(k) || { k, lib, rs: [], equipes: new Set() };
+      x.rs.push(r); x.equipes.add(e.numero); map.set(k, x);
+    }
+  }
+  const colsAdv = (titre, html) => [
+    { k: "lib", label: titre, val: r => r.lib, html },
+    { k: "n", label: "Renc.", val: r => r.rs.length, num: true },
+    { k: "vnd", label: "V-N-D", val: r => r.rs.filter(x => resRencontre(x) === "V").length / r.rs.length,
+      html: r => ["V", "N", "D"].map(c => r.rs.filter(x => resRencontre(x) === c).length).join("-"), num: true },
+    { k: "m", label: "Matchs", val: r => { const v = r.rs.reduce((a, x) => a + x.score_club, 0), j = r.rs.reduce((a, x) => a + x.score_club + x.score_adv, 0); return j ? v / j : null; },
+      html: r => { const v = r.rs.reduce((a, x) => a + x.score_club, 0), j = r.rs.reduce((a, x) => a + x.score_club + x.score_adv, 0); return cellVJ({ v, j, pct: j ? v / j * 100 : null }); }, num: true },
+  ];
+  sortableTable($("#pilotClubs"), "pilotClubs", colsAdv("Club adverse", r => `${esc(r.lib)} <span class="muted small">${esc(r.k)} · éq. ${[...r.equipes].sort((a, b) => a - b).join(", ")}</span>`),
+    [...parClub.values()], { defaut: { cle: "n", sens: -1 } });
+  sortableTable($("#pilotDeps"), "pilotDeps", colsAdv("Département", r => `<b>${esc(r.lib)}</b> <span class="muted small">${new Set(r.rs.map(x => (x.adversaire_code || "").replace(/-\d+$/, ""))).size} club(s)</span>`),
+    [...parDep.values()], { defaut: { cle: "n", sens: -1 } });
 }
 
 /* ---------- démarrage */

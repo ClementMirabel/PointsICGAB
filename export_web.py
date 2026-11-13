@@ -92,6 +92,7 @@ def effectif_payload(players):
         pts, clt = p.get("Points Actuel") or {}, p.get("Classement Actuel") or {}
         out.append({
             "licence": p["Licence"], "nom": p["Nom"], "sexe": p["Sexe"], "prive": bool(p.get("Prive")),
+            "categorie": p.get("Categorie"),
             "classements": [clt.get(t) for t in TABLEAUX], "cotes": [_r(pts.get(t), 0) for t in TABLEAUX],
             "meilleur_tableau": p.get("Meilleur tableau"),
             "icn": p.get("Valeur IC"),

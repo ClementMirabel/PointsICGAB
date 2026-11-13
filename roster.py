@@ -185,6 +185,8 @@ def fetch_club_roster(session):
                 "Nom": cells[0].get_text(strip=True),
                 "Sexe": SEXE_CODE.get(cells[5].get_text(strip=True), "H"),
                 "Classement": dict(zip(("Simple", "Double", "Mixte"), classement)),
+                # catégorie d'âge FFBaD ("Minime 2", "Senior", "Veteran 1"...)
+                "Categorie": cells[6].get_text(" ", strip=True) if len(cells) > 6 else None,
             }
 
         if len(rows) < 50:  # dernière page
@@ -225,6 +227,7 @@ def build_players(session):
             "Classement Actuel": dict(infos["Classement"]),
             "Points Actuel": {},
             "Rang Actuel": {},
+            "Categorie": infos.get("Categorie"),
         }
 
     # 2) points/rang numériques (+ lettre exacte, cohérente avec la

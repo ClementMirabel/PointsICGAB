@@ -138,6 +138,8 @@ class Generateur:
             cotes = self.cotes[nom]
             player = {
                 "Licence": licence, "Nom": nom, "Sexe": sexe,
+                # deux jeunes (badge et filtre "Jeunes" de la page)
+                "Categorie": {0: "Minime 2", 1: "Junior 1"}.get(list(CLUB).index(nom) % 7, "Senior"),
                 "Classement Actuel": {t: _classement(c) for t, c in cotes.items()},
                 "Points Actuel": dict(cotes), "Rang Actuel": {t: 1 for t in cotes},
                 "Journal cote": {t: [{"date": SEPT, "points": c, "cote": c}] for t, c in cotes.items()},
