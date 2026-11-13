@@ -331,7 +331,7 @@ function route() {
   $(".wrap").classList.toggle("noside", club || ic || plan);
   if (plan) { $("#list").style.display = "none"; const [, a, b] = h.split("/"); renderPlan(a, b); return; }
   if (club) { $("#list").style.display = "none"; const [, sous, ...reste] = h.split("/"); renderClub(sous, reste); return; }
-  if (ic) { $("#list").style.display = "none"; renderIC(h.split("/")[1]); return; }
+  if (ic) { $("#list").style.display = "none"; renderIC(h.split("/")[1], h.split("/")[2]); return; }
   $("#list").style.display = "";
   let lic = h.split("/")[1];
   if (!byLicence.has(lic) && icJoueurs.has(lic)) { renderList(lic); renderJoueurIC(icJoueurs.get(lic)); return; }
@@ -625,6 +625,7 @@ function renderJoueur(j) {
         <div class="legend">${joues.filter(t => tab[t].courbe.length).map(t => `<span><i style="background:${TC[t]}"></i>${t}</span>`).join("")}</div>
         <div class="chart" id="courbe"></div>
       </div></section>
+    ${sectionTendanceForme(j)}
     ${auMoinsUnFait ? `<section><h2>Faits marquants</h2><div class="grid facts">${facts.join("")}</div></section>` : ""}
     ${sectionConfrontations(j)}
     ${j.partenaires.length ? `<section><h2>Partenaires</h2>
@@ -652,6 +653,7 @@ function renderJoueur(j) {
     drawCourbe(j);
   });
   drawCourbe(j);
+  drawTendanceForme(j);
   drawMatchs(j);
 }
 
@@ -743,6 +745,36 @@ function sectionConfrontations(j) {
       <span class="riv-b ${x.d > x.v ? "gagne" : ""}">${lienNom(x.adv)}</span>
       <span class="muted small">${x.total} confrontation${x.total > 1 ? "s" : ""}</span></summary>
       ${x.matchs.map(ligneMatchRivalite).join("")}</details>`).join("")}</div></section>`;
+}
+
+/* ---- tendances : indices de forme export par export (DATA.historique_forme) */
+const HISTO_FORME = DATA.historique_forme || {};
+const CLES_FORME = Object.keys(HISTO_FORME).sort();
+const IDX_FORME = { Overall: 0, Simple: 1, Double: 2, Mixte: 3 };
+function sectionTendanceForme(j) {
+  const pts = CLES_FORME.filter(k => HISTO_FORME[k][j.licence]);
+  if (pts.length < 2) return `<section><h2>Forme semaine après semaine</h2>
+    <p class="hint">L'évolution de l'indice de forme s'affichera à partir de 2 exports hebdomadaires (historique démarré mi-novembre 2026).</p></section>`;
+  return `<section><h2>Forme semaine après semaine</h2>
+    <p class="hint">Indice de forme (rang /100 dans le groupe) à chaque export du jeudi : global et par tableau joué.</p>
+    <div class="card"><div class="legend" id="tendLeg"></div><div class="chart" id="tendance"></div></div></section>`;
+}
+function drawTendanceForme(j) {
+  const el = $("#tendance"); if (!el) return;
+  const series = [["Globale", 0, "var(--club)"], ...T.map((t, i) => [t, i + 1, TC[t]])].map(([label, i, color]) => ({
+    key: label, label, color,
+    points: CLES_FORME.map(k => [k.slice(0, 10), HISTO_FORME[k][j.licence]?.[i]]).filter(p => p[1] != null),
+  })).filter(x => x.points.length);
+  $("#tendLeg").innerHTML = series.map(x => `<span><i style="background:${x.color}"></i>${x.label}</span>`).join("");
+  lineChart(el, series, { height: 220, yFmt: v => fmt(v) });
+}
+/* rang de forme à l'export précédent, parmi les licences données (idx : 0 global, 1-3 S/D/M) */
+function rangsPrecedents(licences, idx) {
+  if (CLES_FORME.length < 2) return null;
+  // le dernier instantané est celui de cet export : on compare avec le précédent
+  const cle = CLES_FORME[CLES_FORME.length - 2];
+  const vals = licences.map(l => [l, HISTO_FORME[cle][l]?.[idx]]).filter(x => x[1] != null).sort((a, b) => b[1] - a[1]);
+  return { cle, rangs: new Map(vals.map(([l], i) => [l, i + 1])) };
 }
 
 function fact(t, titre, f, detail, extra) {
@@ -1170,6 +1202,15 @@ function drawClassement() {
   }
   cols.push(...forme.map(([k, l, title], i) => ({ k, label: l, title, val: r => r.x[k], num: true, sm: i > 0,
     html: r => r.x[k] == null ? "–" : `<span class="vs" style="background:rgba(42,120,214,${(r.x[k] / 100 * 0.42).toFixed(3)})">${i === 0 ? `<b>${fmt(r.x[k])}</b>` : fmt(r.x[k])}</span>` })));
+  // évolution du rang de forme depuis l'export précédent
+  const idxF = overall ? 0 : IDX_FORME[ONGLETS[state.clubOnglet][0]];
+  const prec = rangsPrecedents(rows.map(r => r.j.licence), idxF);
+  const rangActuel = new Map([...rows].filter(r => r.x.forme != null).sort((a, b) => b.x.forme - a.x.forme).map((r, i) => [r.j.licence, i + 1]));
+  if (prec) cols.splice(1, 0, { k: "evol", label: "Évol.", title: `Évolution du rang de forme depuis l'export du ${fDate(prec.cle.slice(0, 10))}`,
+    val: r => prec.rangs.has(r.j.licence) && rangActuel.has(r.j.licence) ? prec.rangs.get(r.j.licence) - rangActuel.get(r.j.licence) : null,
+    html: r => { const a = prec.rangs.get(r.j.licence), b = rangActuel.get(r.j.licence);
+      if (b == null) return ""; if (a == null) return `<span class="muted small">nouveau</span>`;
+      const d = a - b; return d > 0 ? `<span class="delta-up">▲ ${d}</span>` : d < 0 ? `<span class="delta-down">▼ ${-d}</span>` : `<span class="muted">=</span>`; }, num: true, sm: true });
   sortableTable($("#classement"), "classement", cols, rows, { defaut: { cle: "forme", sens: -1 }, rang: true,
     rowClass: r => r.x.matchs < PEU_DE_MATCHS ? "few" : "", lien: r => "#joueur/" + r.j.licence });
   const prog = rows.filter(r => r.x.diff_cote != null).sort((a, b) => b.x.diff_cote - a.x.diff_cote);
@@ -1513,16 +1554,61 @@ function lienPlan(e, r, contenu) {
   return `<a href="#plan/${samediDe(r.date)}/${r.id}" title="Ouvrir dans le planificateur">${contenu}</a>`;
 }
 
-function renderIC(sous) {
+function renderIC(sous, id) {
   if (!IC || !IC.equipes.length) {
     $("#main").innerHTML = `<div class="card empty">Données interclubs indisponibles pour cet export (icbad.ffbad.org n'a pas répondu).</div>`;
     return;
   }
+  if (sous === "adv") { $("#main").innerHTML = `<div id="icPage"></div>`; return icAdversaire($("#icPage"), id); }
   const num = +sous;
   const equipe = IC.equipes.find(e => e.numero === num);
   $("#main").innerHTML = `<nav class="chips subnav"><a class="chip ${!equipe ? "on" : ""}" href="#ic">Vue globale</a>${IC.equipes.map(e =>
     `<a class="chip ${equipe === e ? "on" : ""}" href="#ic/${e.numero}">Équipe ${e.numero} <span class="muted">· ${esc(e.division)}</span></a>`).join("")}</nav><div id="icPage"></div>`;
   (equipe ? icEquipe : icGlobal)($("#icPage"), equipe);
+}
+
+/* -- fiche adversaire : classement, résultats de poule, composition type, effectif, confrontations avec le GAB */
+const lienAdv = (r, contenu) => r.adversaire_equipe_id && IC.adversaires?.[r.adversaire_equipe_id]
+  ? `<a href="#ic/adv/${r.adversaire_equipe_id}" title="Fiche de l'adversaire">${contenu}</a>` : contenu;
+function icAdversaire(el, id) {
+  const adv = IC.adversaires?.[id];
+  if (!adv) { el.innerHTML = `<div class="card empty">Adversaire introuvable.</div>`; return; }
+  const e = IC.equipes.find(x => x.rencontres.some(r => r.adversaire_equipe_id === id));
+  const ligne = e?.classement.find(c => c.equipe_id === id) || {};
+  const nos = (e?.rencontres || []).filter(r => r.adversaire_equipe_id === id);
+  const leurs = (adv.rencontres || []).filter(r => r.score && r.score[0] + r.score[1] > 0).map(r => {
+    const dom = (r.domicile || "").includes(adv.code), [a, b] = r.score;
+    const pour = dom ? a : b, contre = dom ? b : a;
+    return { ...r, autre: dom ? r.exterieur : r.domicile, pour, contre, res: pour > contre ? "V" : pour < contre ? "D" : "N" };
+  });
+  const joueurs = (adv.joueurs || []).map(p => ({ ...p, cotes: p.classements.map(c => c.cote), classements: p.classements.map(c => c.classement) }));
+  const parLic = new Map(joueurs.map(p => [p.licence, p]));
+  el.innerHTML = `<div class="chips subnav">${e ? `<a class="chip" href="#ic/${e.numero}">← Équipe ${e.numero}</a>` : ""}</div>
+    <div class="card hero"><div class="who"><h2>${esc(adv.nom)}</h2>
+      <div class="small muted" style="margin-top:6px">${e ? `${esc(e.division_titre)} · adversaire de l'équipe ${e.numero} · ` : ""}<a href="https://icbad.ffbad.org/equipe/${esc(id)}" target="_blank" rel="noopener">voir sur icbad</a></div></div>
+      <div class="stat"><div class="v num">${ordinal(ligne.rang)}</div><div class="l">sur ${e?.nb_equipes ?? "?"} · ${ligne.pts ?? "–"} pts</div></div>
+      <div class="stat"><div class="v num">${ligne.g ?? "–"}-${ligne.n ?? "–"}-${ligne.p ?? "–"}</div><div class="l">victoires – nuls – défaites</div></div>
+      <div class="stat"><div class="v num">${signed(ligne.diff_matchs)}</div><div class="l">matchs +/-</div></div></div>
+    <section><h2>Face au GAB</h2><div class="card scroll"><table class="t"><thead><tr><th>Journée</th><th>Date</th><th></th><th class="r">Score GAB</th><th></th></tr></thead><tbody>
+      ${nos.map(r => `<tr><td>${esc(r.journee)}</td><td class="num">${r.date ? fDate(r.date) : "–"}</td><td><span class="tag">${r.domicile ? "GAB reçoit" : "à l'extérieur"}</span></td>
+        <td class="r num">${r.jouee ? `<span class="res ${resRencontre(r) === "V" ? "v" : resRencontre(r) === "D" ? "d" : ""}">${resRencontre(r)}</span> ${r.score_club}-${r.score_adv}` : `<span class="muted">à venir</span>`}</td>
+        <td>${e && e.numero <= (IC.equipes_planificateur || 6) && r.date ? `<a class="eq" href="#plan/${samediDe(r.date)}/${r.id}">${r.jouee ? "feuille" : "composer"}</a>` : ""}</td></tr>`).join("")}</tbody></table></div></section>
+    <section><h2>Leurs résultats de poule</h2><div class="card scroll">${leurs.length ? `<table class="t"><thead><tr><th>Journée</th><th>Date</th><th>Contre</th><th class="r">Score</th></tr></thead><tbody>
+      ${leurs.map(r => `<tr><td>${esc(r.journee)}</td><td class="num">${r.date ? fDate(r.date) : "–"}</td><td>${esc(r.autre)}</td>
+        <td class="r num"><span class="res ${r.res === "V" ? "v" : r.res === "D" ? "d" : ""}" style="${r.res === "N" ? "background:var(--muted)" : ""}">${r.res}</span> ${r.pour}-${r.contre}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">Aucune rencontre jouée.</div>`}</div></section>
+    <section><h2>Composition type</h2><p class="hint">Joueurs habituellement alignés (icbad), avec leur cote dans la discipline.</p><div class="card scroll"><table class="t"><tbody>
+      ${(adv.composition_type || []).map(c => { const t = slotType(c.code), ps = c.joueurs.map(x => parLic.get(x.licence) || x);
+        return `<tr><td><b>${slotLabel(c.code)}</b></td><td>${ps.map(x => `${esc(x.nom)}${badgeMute(x.mute)} <span class="muted small num">${fmt(coteDe(x, t))}</span>`).join(" / ")}</td>
+          <td class="r num">${fmt(moyenne(ps.map(x => coteDe(x, t))))}</td></tr>`; }).join("")}</tbody></table></div></section>
+    <section><h2>Effectif</h2><div class="card scroll" id="advEffectif"></div></section>`;
+  sortableTable($("#advEffectif"), "advEff", [
+    { k: "nom", label: "Joueur", val: r => r.nom, html: r => `${esc(r.nom)}${badgeMute(r.mute)}${r.capitaine ? ' <span class="tag" title="Capitaine">C</span>' : ""}` },
+    { k: "sexe", label: "", val: r => r.sexe || "", sm: true },
+    { k: "clt", label: "Clt S/D/M", val: r => Math.max(...r.cotes.map(c => c || 0)), html: clsBadges },
+    { k: "renc", label: "Rencontres", val: r => r.rencontres, num: true },
+    { k: "m", label: "Matchs", val: r => r.matchs, num: true, sm: true },
+    { k: "pct", label: "% vict. IC", val: r => r.pct, html: r => r.matchs ? pct(r.pct) : "–", num: true },
+  ], joueurs, { defaut: { cle: "renc", sens: -1 }, rowClass: r => r.rencontres ? "" : "few" });
 }
 
 /* -- vue globale */
@@ -1579,6 +1665,8 @@ function icGlobal(el) {
       <p class="hint" style="margin-top:12px">Points de cote gagnés ou perdus en interclubs (résultats myffbad) : connus pour ${joueurs.filter(x => x.pts != null).length} joueurs sur ${joueurs.length}${icPrives.size ? `, ${joueurs.filter(x => x.pts == null && icPrives.has(x.licence)).length} profil(s) privé(s)` : ""}.</p>
       <div class="chips" id="icFiltreJoueurs" style="margin:6px 0 10px"></div>
       <div class="card scroll" id="icJoueurs"></div></section>
+    <p class="hint">Calendriers des rencontres à ajouter à son agenda : ${IC.equipes.map(e => `<a href="calendrier-equipe-${e.numero}.ics">équipe ${e.numero}</a>`).join(" · ")} · <a href="calendrier-interclubs.ics">toutes les équipes</a>
+      (dans Google Agenda : « Autres agendas » → « À partir de l'URL », avec l'adresse du lien, pour une mise à jour automatique).</p>
     <p class="hint">Source : <a href="${esc(IC.url)}" target="_blank" rel="noopener">icbad.ffbad.org</a> (feuilles de rencontre) ; points de cote : résultats joueurs myffbad.</p>`;
 
   sortableTable($("#icEquipes"), "icEquipes", [
@@ -1633,7 +1721,8 @@ function icEquipe(el, e) {
     <div class="card hero">
       <div class="who"><h2>Équipe ${e.numero} <span class="muted" style="font-weight:500">· ${esc(e.division)}</span></h2>
         <div class="small muted" style="margin-top:6px">${esc(e.division_titre)} · ${e.joueurs.length} joueurs inscrits ·
-          <a href="https://icbad.ffbad.org/equipe/${esc(e.equipe_id)}" target="_blank" rel="noopener">voir sur icbad</a></div></div>
+          <a href="https://icbad.ffbad.org/equipe/${esc(e.equipe_id)}" target="_blank" rel="noopener">voir sur icbad</a>
+          · <a href="calendrier-equipe-${e.numero}.ics" title="Ajouter les rencontres de l'équipe à son agenda (fichier .ics, ou abonnement par l'adresse du lien)">📅 calendrier</a></div></div>
       <div class="stat"><div class="v num">${ordinal(e.rang)}</div><div class="l">sur ${e.nb_equipes} · ${ligneClub.pts ?? "–"} pts</div></div>
       <div class="stat"><div class="v num">${jouees.length}<span class="muted" style="font-size:16px"> / ${e.rencontres.length}</span></div><div class="l">rencontres jouées</div></div>
       <div class="stat"><div class="v num">${vnd.V}-${vnd.N}-${vnd.D}</div><div class="l">victoires – nuls – défaites</div></div>
@@ -1644,7 +1733,7 @@ function icEquipe(el, e) {
       <div class="card scroll" id="icRenc"></div></section>
     ${avenir.length ? `<section><h2>À venir</h2><div class="card scroll"><table class="t"><thead><tr><th>Journée</th><th>Date</th><th></th><th>Adversaire</th><th class="hide-sm">Lieu</th></tr></thead><tbody>
       ${avenir.map(r => `<tr><td>${esc(r.journee)}</td><td class="num" style="white-space:nowrap">${r.date ? fDate(r.date) : "–"}${r.heure ? ` · ${esc(r.heure)}` : ""}</td>
-        <td><span class="tag">${r.domicile ? "Domicile" : "Extérieur"}</span></td><td>${lienPlan(e, r, esc(r.adversaire))}${e.numero <= (IC.equipes_planificateur || 6) ? ` <a class="eq" href="#plan/${samediDe(r.date)}/${r.id}">composer</a>` : ""}</td><td class="hide-sm muted">${esc(r.lieu)}</td></tr>`).join("")}</tbody></table></div></section>` : ""}
+        <td><span class="tag">${r.domicile ? "Domicile" : "Extérieur"}</span></td><td>${lienPlan(e, r, esc(r.adversaire))}${e.numero <= (IC.equipes_planificateur || 6) ? ` <a class="eq" href="#plan/${samediDe(r.date)}/${r.id}">composer</a>` : ""} ${lienAdv(r, '<span class="eq">fiche</span>')}</td><td class="hide-sm muted">${esc(r.lieu)}</td></tr>`).join("")}</tbody></table></div></section>` : ""}
     <section><h2>Bilan par match</h2>
       <div class="grid g4" style="margin-bottom:14px">
         ${T.map(f => tuile(f === "Simple" ? "Simples" : f === "Double" ? "Doubles" : "Mixtes", vj(ms.filter(m => famille(slotType(m.code)) === f)))).join("")}
@@ -1665,7 +1754,7 @@ function icEquipe(el, e) {
     ${jouees.map(r => {
       const res = resRencontre(r);
       return `<tr><td class="muted">${esc(r.journee)}</td><td class="num" style="white-space:nowrap">${r.date ? fDate(r.date) : "–"}<div class="small muted">${r.domicile ? "Domicile" : "Extérieur"}</div></td>
-        <td>${lienPlan(e, r, esc(r.adversaire))}</td>
+        <td>${lienPlan(e, r, esc(r.adversaire))} ${lienAdv(r, '<span class="eq" title="Fiche adversaire">fiche</span>')}</td>
         <td class="r num" style="white-space:nowrap"><span class="res ${res === "V" ? "v" : res === "D" ? "d" : ""}" style="${res === "N" ? "background:var(--muted)" : ""}">${res}</span> ${r.score_club}-${r.score_adv}</td>
         ${slots.map(s => { const m = r.matchs.find(x => slotCle(x.code) === s.cle);
           if (!m) return `<td class="muted">–</td>`;
@@ -2321,7 +2410,8 @@ function planRencontre(el, w, wes, rid) {
   const tete = navWeekends(w, wes) + `
     <div class="card hero"><div class="who"><h2>Équipe ${n} <span class="muted" style="font-weight:500">${r.domicile ? "reçoit" : "chez"}</span> ${esc(r.adversaire)}</h2>
       <div class="small muted" style="margin-top:6px">${esc(r.journee)} · ${fJour(r.date)}${r.heure ? ` à ${esc(r.heure)}` : ""} · ${esc(r.lieu || "")} · ${esc(e.division)}
-        · <a href="https://icbad.ffbad.org/rencontre/${esc(r.id)}" target="_blank" rel="noopener">voir sur icbad</a></div></div>
+        · <a href="https://icbad.ffbad.org/rencontre/${esc(r.id)}" target="_blank" rel="noopener">voir sur icbad</a>
+        ${r.adversaire_equipe_id && IC.adversaires?.[r.adversaire_equipe_id] ? ` · <a href="#ic/adv/${r.adversaire_equipe_id}">fiche de l'adversaire</a>` : ""}</div></div>
       ${r.jouee ? `<div class="stat"><div class="v num">${r.score_club} – ${r.score_adv}</div><div class="l">${resRencontre(r) === "V" ? "victoire" : resRencontre(r) === "D" ? "défaite" : "nul"}</div></div>` : ""}</div>`;
 
   if (r.jouee) {
@@ -2342,7 +2432,9 @@ function planRencontre(el, w, wes, rid) {
 
   // rencontre à venir : composition GAB (joueurs du week-end) vs composition type adverse
   const codes = formatEquipe(e);
-  const nos = joueursAffectes(w.samedi, n);
+  // cotes de J-10 (CPPH du jeudi précédant la semaine) quand elles sont connues
+  const J10 = DATA.cotes_j10?.[w.samedi];
+  const nos = joueursAffectes(w.samedi, n).map(p => J10?.cotes?.[p.licence] ? { ...p, cotes: J10.cotes[p.licence] } : p);
   const advJoueurs = new Map((adv?.joueurs || []).map(p => [p.licence, { ...p, cotes: p.classements.map(c => c.cote), classements: p.classements.map(c => c.classement) }]));
   const compo = PLAN.compos[rid] || (PLAN.compos[rid] = {});
   const compoAdv = PLAN.adverses[rid] || (PLAN.adverses[rid] = {});
@@ -2355,7 +2447,10 @@ function planRencontre(el, w, wes, rid) {
   el.innerHTML = tete + `
     ${nos.length ? "" : `<div class="card" style="margin-top:14px">${statut(false, `Aucun joueur affecté à l'équipe ${n} ce week-end : <a href="#plan/${w.samedi}">les choisir d'abord</a>.`)}</div>`}
     <section><h2>Composition</h2>
-      <p class="hint">(M) = joueur muté, ${MAX_MUTES} au maximum alignés par rencontre. GAB : parmi les ${nos.length} joueurs affectés à l'équipe ${n} ce week-end. Adversaire : composition type icbad par défaut, modifiable. Cote de la discipline (simple, double ou mixte) ; pour un double, moyenne des deux. Classements actuels, pas ceux de J-10.</p>
+      <p class="hint">(M) = joueur muté, ${MAX_MUTES} au maximum alignés par rencontre. GAB : parmi les ${nos.length} joueurs affectés à l'équipe ${n} ce week-end. Adversaire : composition type icbad par défaut, modifiable. Cote de la discipline (simple, double ou mixte) ; pour un double, moyenne des deux. ${J10
+      ? `Cotes GAB de J-10 (export du ${fDate(J10.export.slice(0, 10))}), celles qui fixent la hiérarchie.`
+      : "Cotes GAB du dernier export : celles de J-10 ne sont pas encore publiées pour ce week-end."}</p>
+      <div class="chips" style="margin-bottom:10px"><button class="chip" id="planProposer" title="Placement automatique respectant les règles, à ajuster ensuite">✦ Proposer une composition</button><span id="planProposerMsg" class="small muted" style="align-self:center"></span></div>
       <div class="card scroll" id="planCompo"></div><div id="planChecks" style="margin-top:12px"></div></section>`;
 
   const dessiner = () => {
@@ -2378,6 +2473,15 @@ function planRencontre(el, w, wes, rid) {
       + `<div class="chk muted">Adversaire : ${nbMutesAdv} muté${nbMutesAdv > 1 ? "s" : ""} dans la composition affichée.</div>`;
   };
   dessiner();
+  $("#planProposer").onclick = () => {
+    if (!nos.length) { $("#planProposerMsg").textContent = "Affecter d'abord des joueurs à l'équipe ce week-end."; return; }
+    const adverse = Object.fromEntries(codes.map(c => [c, (compoAdv[c] || []).map(l => advJoueurs.get(l)).filter(Boolean)]));
+    const res = proposerComposition(codes, nos, adverse);
+    if (!res) { $("#planProposerMsg").textContent = "Aucune composition valide avec les joueurs affectés (pas assez d'hommes ou de femmes ?)."; return; }
+    for (const c of codes) compo[c] = res.compo[c];
+    planSauver(); dessiner();
+    $("#planProposerMsg").textContent = `≈ ${fmt(res.attendus, 1)} matchs gagnés attendus sur ${codes.length} (estimation indicative d'après les écarts de cote).`;
+  };
   el.addEventListener("change", ev => {
     const s = ev.target.closest("select[data-slot]"); if (!s) return;
     const cible = s.dataset.cote === "gab" ? compo : compoAdv;
@@ -2385,6 +2489,68 @@ function planRencontre(el, w, wes, rid) {
     arr[+s.dataset.i] = s.value || null;
     planSauver(); dessiner();
   });
+}
+
+/* Composition automatique : respecte les règles (sexe, 2 matchs max par joueur,
+   jamais deux dans la même discipline, hiérarchie des cotes dans chaque type,
+   mutés) et maximise le nombre attendu de matchs gagnés, estimé par une
+   probabilité logistique sur l'écart de cote (échelle 400, indicative).
+   Recherche : glouton puis améliorations locales aléatoires, quelques départs. */
+function proposerComposition(codes, nos, adverse) {
+  const types = codes.map(c => slotType(c));
+  const coteAdv = codes.map(c => moyenne((adverse[c] || []).map(p => coteDe(p, slotType(c)))));
+  const proba = (cg, ca) => cg == null ? 0 : ca == null ? 0.5 + (cg - 2000) / 20000 : 1 / (1 + Math.pow(10, (ca - cg) / 400));
+  const parSexe = { H: nos.filter(p => p.sexe === "H"), F: nos.filter(p => p.sexe === "F") };
+  const evaluer = sol => {
+    const matchs = {}, disc = {}, mutes = new Set();
+    for (let i = 0; i < codes.length; i++) for (const p of sol[i]) {
+      if (!p) return null;
+      matchs[p.licence] = (matchs[p.licence] || 0) + 1;
+      const d = DISC_NOM[types[i]]; const k = p.licence + d; disc[k] = (disc[k] || 0) + 1;
+      if (matchs[p.licence] > 2 || disc[k] > 1) return null;
+      if (estMute(p.licence)) mutes.add(p.licence);
+      if (sol[i].length === 2 && sol[i][0].licence === sol[i][1].licence) return null;
+    }
+    if (mutes.size > MAX_MUTES) return null;
+    return codes.reduce((a, c, i) => a + proba(moyenne(sol[i].map(p => coteDe(p, types[i]))), coteAdv[i]), 0);
+  };
+  // hiérarchie : dans chaque type à plusieurs matchs, les meilleurs (cote moyenne) sur le n°1
+  const ordonner = sol => {
+    const parType = {};
+    codes.forEach((c, i) => (parType[types[i]] = parType[types[i]] || []).push(i));
+    for (const [t, idx] of Object.entries(parType)) {
+      if (idx.length < 2) continue;
+      idx.sort((a, b) => slotNum(codes[a]) - slotNum(codes[b]));
+      const entrees = idx.map(i => sol[i]).sort((x, y) => (moyenne(y.map(p => coteDe(p, t))) || 0) - (moyenne(x.map(p => coteDe(p, t))) || 0));
+      idx.forEach((i, k) => { sol[i] = entrees[k]; });
+    }
+    return sol;
+  };
+  const aleatoire = l => l[Math.floor(Math.random() * l.length)];
+  let meilleur = null, meilleurScore = -1;
+  for (let depart = 0; depart < 6; depart++) {
+    // glouton (départ 0) ou aléatoire (suivants)
+    let sol = null;
+    for (let essai = 0; essai < 200 && !sol; essai++) {
+      const cand = codes.map((c, i) => ROLES[types[i]].map(sx => {
+        const l = parSexe[sx]; if (!l.length) return null;
+        return depart === 0 && essai === 0 ? [...l].sort((a, b) => (coteDe(b, types[i]) || 0) - (coteDe(a, types[i]) || 0))[0] : aleatoire(l);
+      }));
+      if (evaluer(ordonner(cand)) != null) sol = cand;
+    }
+    if (!sol) continue;
+    let score = evaluer(sol);
+    for (let it = 0; it < 3000; it++) {
+      const i = Math.floor(Math.random() * codes.length), r = Math.floor(Math.random() * sol[i].length);
+      const l = parSexe[ROLES[types[i]][r]];
+      const essai = sol.map(x => [...x]); essai[i][r] = aleatoire(l);
+      const sc = evaluer(ordonner(essai));
+      if (sc != null && sc >= score) { sol = essai; score = sc; }
+    }
+    if (score > meilleurScore) { meilleur = sol; meilleurScore = score; }
+  }
+  if (!meilleur) return null;
+  return { compo: Object.fromEntries(codes.map((c, i) => [c, meilleur[i].map(p => p.licence)])), attendus: meilleurScore };
 }
 
 /* contrôles d'une composition GAB : 2 matchs max, pas 2 dans la même discipline, hiérarchie des cotes */

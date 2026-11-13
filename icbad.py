@@ -56,6 +56,14 @@ def _int(texte):
         return None
 
 
+def _float_pct(texte):
+    """"66.67 %" -> 66.67."""
+    try:
+        return float(str(texte).replace("%", "").replace(",", ".").strip())
+    except ValueError:
+        return None
+
+
 def _id(href):
     m = _ID.search(href or "")
     return m.group(1) if m else None
@@ -165,6 +173,7 @@ def parse_equipe(html, saison_debut=None):
             "mute": _est_mute(tr),
             "rencontres": _int(derniers[0]) if len(derniers) == 3 else None,
             "matchs": _int(derniers[1]) if len(derniers) == 3 else None,
+            "pct": _float_pct(derniers[2]) if len(derniers) == 3 else None,
         })
     rencontres = []
     for tr in soup.select("tr.clickable-row"):
@@ -339,8 +348,13 @@ def collecter(session=None, club=CLUB, log=print):
                         continue
                     try:
                         adv = parse_equipe(_get(session, f"/equipe/{c['equipe_id']}"))
-                        adversaires[c["equipe_id"]] = {"nom": c["nom"], "code": c["code"], "joueurs": adv["joueurs"],
-                                                       "composition_type": adv["composition_type"]}
+                        adversaires[c["equipe_id"]] = {
+                            "nom": c["nom"], "code": c["code"], "joueurs": adv["joueurs"],
+                            "composition_type": adv["composition_type"],
+                            # leurs rencontres de la poule (scores) : fiche adversaire
+                            "rencontres": [{k: r[k] for k in ("journee", "date", "domicile", "exterieur", "score")}
+                                           for r in adv["rencontres"]],
+                        }
                     except Exception as e:
                         log(f"    adversaire {c['code']} illisible : {e}")
             equipes.append({

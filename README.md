@@ -9,14 +9,14 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 | Onglet | Contenu |
 |---|---|
 | **Club** | Aperçu (avec l'évolution depuis la semaine précédente), classement de forme, compétitions et tournois, stats par catégorie (chaque chiffre ouvre la liste des matchs concernés), profil de jeu, records et rivalités internes |
-| **Interclubs** | Équipes 1 à 6 : rencontres, joueurs alignés sur chaque match, bilans par match et par joueur, classement de poule |
+| **Interclubs** | Équipes 1 à 6 : rencontres, joueurs alignés sur chaque match, bilans par match et par joueur, classement de poule, fiche de chaque adversaire (résultats de poule, composition type, effectif, confrontations avec le GAB), calendriers à ajouter à son agenda |
 | **Planificateur** | Affectation des joueurs par week-end d'interclubs, composition des rencontres, contrôles réglementaires, export Excel |
-| **Joueurs** | Une fiche par joueur : forme par tableau, évolution de la cote, faits marquants, partenaires, matchs, interclubs |
+| **Joueurs** | Une fiche par joueur : forme par tableau, évolution de la cote et de l'indice de forme semaine après semaine, faits marquants, confrontations avec les autres joueurs du club, partenaires, matchs, interclubs |
 
 ### Le planificateur, en bref
 
 - **Par week-end** : glisser les joueurs vers les équipes (ou choisir l'équipe dans leur ligne). Un joueur ne peut jouer que dans une équipe par week-end. Le bouton « Copier les effectifs du week-end précédent » reprend les équipes de la semaine d'avant.
-- **Par rencontre** : choisir les joueurs de chaque match parmi ceux affectés à l'équipe ; la composition type de l'adversaire (icbad) est préremplie.
+- **Par rencontre** : choisir les joueurs de chaque match parmi ceux affectés à l'équipe, ou cliquer « Proposer une composition » (placement automatique qui respecte toutes les règles et maximise les écarts de cote, à ajuster ensuite) ; la composition type de l'adversaire (icbad) est préremplie. La hiérarchie utilise les cotes de J-10 dès qu'elles sont publiées.
 - **Contrôles** :
   - valeur d'équipe (3 meilleurs joueurs + 3 meilleures joueuses), ICN pour l'équipe 1, ICR pour les autres, et hiérarchie des valeurs entre équipes (règlement ICR AURA art. 5) ;
   - 2 matchs maximum par joueur et pas deux dans la même discipline ; hiérarchie des cotes (SH1 ≥ SH2…) ;
@@ -25,6 +25,10 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 - **Week-ends passés** : affichage de ce qui s'est réellement joué (feuilles icbad), avec les valeurs des joueurs figées à l'export qui a suivi le week-end.
 - **Sauvegarde** : le plan est enregistré **dans le navigateur** de chacun ; il est conservé d'une semaine à l'autre mais n'est pas partagé. Pour l'échanger entre capitaines : « Exporter le plan », puis « Importer un plan » de l'autre côté.
 - **Export Excel** d'un week-end, au format du classeur « INTERCLUBS » (propositions d'équipe, valeurs, compositions).
+
+## 📅 Calendriers des interclubs
+
+À ajouter à son agenda (Google Agenda : « Autres agendas » → « À partir de l'URL », pour une mise à jour automatique) : [toutes les équipes](https://clementmirabel.github.io/PointsICGAB/calendrier-interclubs.ics), ou une équipe : `https://clementmirabel.github.io/PointsICGAB/calendrier-equipe-N.ics` (N de 1 à 6).
 
 ## ⬇️ Fichiers Excel
 
@@ -53,14 +57,21 @@ Données conservées entre deux runs :
 
 | Donnée | Où | Rôle |
 |---|---|---|
-| `historique_valeurs.json` | branche `donnees` du dépôt | valeurs figées par week-end d'interclubs |
+| `historique_valeurs.json` | branche `donnees` du dépôt | valeurs figées par week-end d'interclubs, et instantané de chaque export (cotes de tout l'effectif → cotes J-10 ; indices de forme → tendances) |
 | `resume.json` | publié avec la page | chiffres clés, comparés par l'export suivant (Aperçu) |
 | `statsJoueurs.json` | artefact du run | dump complet, pour régénérer sans re-scraper |
+
+### Tests et alertes
+
+- `python -m unittest discover -s tests -t .` : règles de calcul et parcours de la page dans Chrome, sur des données **entièrement fictives** (`tests/donnees_fictives.py`). Lancés à chaque push (workflow `tests.yml`) et au début de l'export du jeudi, qui s'arrête si un test échoue.
+- Si l'export échoue, une issue « Export hebdomadaire en échec » est ouverte (notification GitHub par mail), puis fermée automatiquement au premier export réussi.
+- La page tient dans un seul fichier HTML (~1,4 Mo mi-novembre, ~200 Ko transférés grâce à la compression) ; un test alerte au-delà de 8 Mo.
 
 ### Prérequis du dépôt
 
 - Secrets `MYFFBAD_LICENCE` et `MYFFBAD_PASSWORD` (compte myffbad utilisé pour la connexion).
 - Settings → Pages → Source : **GitHub Actions**.
+- Issues activées (alertes d'échec de l'export).
 
 ### En local
 

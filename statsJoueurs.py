@@ -822,6 +822,7 @@ def main(licence_filter):
     chemin_hist = os.path.join(APP_DIR, historique_ic.FICHIER)
     historique = historique_ic.charger(chemin_hist)
     ajoutes = historique_ic.mettre_a_jour(historique, interclubs, effectif)
+    historique_ic.ajouter_export(historique, all_stats, effectif)  # cotes J-10, tendances de forme
     historique_ic.sauver(historique, chemin_hist)
     print(f"Historique des valeurs IC : {len(historique['weekends'])} week-end(s)"
           + (f", ajouté(s) : {', '.join(ajoutes)}" if ajoutes else ", rien de nouveau"))

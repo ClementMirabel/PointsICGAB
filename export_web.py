@@ -13,7 +13,7 @@ import re
 
 import requests
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import export_excel
 import results
@@ -423,6 +423,79 @@ def resume_precedent():
         return None
 
 
+def _cotes_j10_payload(historique, interclubs):
+    """{samedi: {"export": clé, "cotes": {licence: [S, D, M]}}} pour les
+    week-ends à venir dont les cotes de J-10 sont connues (voir
+    historique_ic.cotes_j10) - les week-ends passés affichent les feuilles."""
+    import historique_ic  # import local : historique_ic est indépendant de la page
+    if not historique or not interclubs:
+        return {}
+    samedis = set()
+    for e in interclubs.get("equipes", []):
+        for r in e["rencontres"]:
+            if r.get("date") and not r["jouee"]:
+                samedis.add(historique_ic.samedi_de(date.fromisoformat(r["date"])).isoformat())
+    out = {}
+    for sam in sorted(samedis):
+        trouve = historique_ic.cotes_j10(historique, sam)
+        if trouve:
+            out[sam] = {"export": trouve[0], "cotes": trouve[1]}
+    return out
+
+
+def calendriers_ics(interclubs, dossier):
+    """Un calendrier iCalendar par équipe (calendrier-equipe-N.ics) et un pour
+    toutes (calendrier-interclubs.ics) : rencontres datées, à importer ou à
+    suivre par abonnement (Google Agenda, Apple Calendrier...). Renvoie les
+    chemins écrits."""
+    if not interclubs:
+        return []
+    def _esc(t):
+        return str(t or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+    vtimezone = ["BEGIN:VTIMEZONE", "TZID:Europe/Paris",
+                 "BEGIN:DAYLIGHT", "TZOFFSETFROM:+0100", "TZOFFSETTO:+0200", "TZNAME:CEST",
+                 "DTSTART:19700329T020000", "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU", "END:DAYLIGHT",
+                 "BEGIN:STANDARD", "TZOFFSETFROM:+0200", "TZOFFSETTO:+0100", "TZNAME:CET",
+                 "DTSTART:19701025T030000", "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU", "END:STANDARD",
+                 "END:VTIMEZONE"]
+    horodatage = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    def _evenements(e):
+        lignes = []
+        for r in e["rencontres"]:
+            if not r.get("date"):
+                continue
+            jour = r["date"].replace("-", "")
+            h, mn = (r.get("heure") or "14:00").split(":")[:2]
+            debut = f"{jour}T{int(h):02d}{int(mn):02d}00"
+            fin_h = min(int(h) + 4, 23)
+            titre = f"IC Équipe {e['numero']} ({e['division']}) {'vs' if r['domicile'] else '@'} {r['adversaire']}"
+            if r.get("jouee") and r.get("score_club") is not None:
+                titre += f" · {r['score_club']}-{r['score_adv']}"
+            lignes += ["BEGIN:VEVENT", f"UID:ic-{r['id']}@gab38-stats", f"DTSTAMP:{horodatage}",
+                       f"DTSTART;TZID=Europe/Paris:{debut}", f"DTEND;TZID=Europe/Paris:{jour}T{fin_h:02d}{int(mn):02d}00",
+                       f"SUMMARY:{_esc(titre)}", f"LOCATION:{_esc(r.get('lieu'))}",
+                       f"DESCRIPTION:{_esc(e['division_titre'] + ' · ' + str(r.get('journee') or ''))}",
+                       f"URL:https://icbad.ffbad.org/rencontre/{r['id']}", "END:VEVENT"]
+        return lignes
+
+    def _ecrire(nom, titre, evenements):
+        contenu = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//GAB38//Stats joueurs//FR", "CALSCALE:GREGORIAN",
+                   f"X-WR-CALNAME:{_esc(titre)}", "X-WR-TIMEZONE:Europe/Paris", *vtimezone, *evenements, "END:VCALENDAR"]
+        chemin = os.path.join(dossier, nom)
+        with open(chemin, "w", encoding="utf-8", newline="") as f:
+            f.write("\r\n".join(contenu) + "\r\n")
+        return chemin
+
+    chemins, tous = [], []
+    for e in interclubs.get("equipes", []):
+        evs = _evenements(e)
+        tous += evs
+        chemins.append(_ecrire(f"calendrier-equipe-{e['numero']}.ics", f"GAB38 · Interclubs équipe {e['numero']}", evs))
+    chemins.append(_ecrire("calendrier-interclubs.ics", "GAB38 · Interclubs (toutes les équipes)", tous))
+    return chemins
+
+
 def _saison(today=None):
     today = today or date.today()
     debut = today.year if today.month >= 9 else today.year - 1
@@ -463,6 +536,10 @@ def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
         "effectif": effectif,
         # valeurs figées par week-end d'interclubs (voir historique_ic)
         "valeurs_historiques": (historique or {}).get("weekends") or {},
+        # indices de forme export par export (tendances sur la saison)
+        "historique_forme": {k: v.get("forme", {}) for k, v in sorted(((historique or {}).get("exports") or {}).items())},
+        # cotes de J-10 des week-ends à venir (hiérarchie réglementaire)
+        "cotes_j10": _cotes_j10_payload(historique, interclubs),
     }
 
 
@@ -474,7 +551,9 @@ def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interc
     payload["precedent"] = resume_precedent()
     with open(os.path.join(os.path.dirname(os.path.abspath(output_path)), RESUME_NOM), "w", encoding="utf-8") as f:
         json.dump(resume(payload), f, ensure_ascii=False, default=_json_default)
-    data = json.dumps(payload, ensure_ascii=False, default=_json_default)
+    calendriers_ics(interclubs, os.path.dirname(os.path.abspath(output_path)))
+    # JSON compact (sans espaces) : ~10 % de moins à charger
+    data = json.dumps(payload, ensure_ascii=False, default=_json_default, separators=(",", ":"))
     # "</script>" dans un nom de tournoi fermerait la balise : on échappe "</"
     data = data.replace("</", "<\\/")
     with open(output_path, "w", encoding="utf-8") as f:

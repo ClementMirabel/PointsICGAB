@@ -7,5 +7,6 @@ statsJoueurs.json
 icbad.json
 statsJoueurs_resume.json
 historique_valeurs.json
+calendrier-*.ics
 ~$*.xlsx
 debug/

@@ -64,6 +64,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # tests (données fictives, ~20 s) avant tout : une page cassée ne doit
+      # être ni générée pendant 35 min, ni publiée
+      - name: Run tests
+        run: python -m unittest discover -s tests -t .
+
       # historique des valeurs IC figées par week-end (historique_ic.py) :
       # conservé d'une semaine sur l'autre sur la branche "donnees"
       - name: Fetch IC value history
@@ -99,6 +104,7 @@ jobs:
             statsJoueurs.xlsx
             statsJoueurs.html
             statsJoueurs_resume.json
+            calendrier-*.ics
 
       # push simple (jamais forcé) : si la branche a bougé ou n'a pas pu être
       # lue, le push est refusé plutôt que d'écraser l'historique existant
@@ -153,6 +159,8 @@ jobs:
           cp export/statsJoueurs.html site/index.html
           # chiffres clés de cet export : l'export suivant les compare (Aperçu)
           cp export/statsJoueurs_resume.json site/resume.json || true
+          # calendriers des interclubs (abonnement depuis un agenda)
+          cp export/calendrier-*.ics site/ 2>/dev/null || true
           touch site/.nojekyll
 
       - uses: actions/configure-pages@v5
@@ -192,3 +200,30 @@ jobs:
           files: |
             artifacts/**/*.xlsx
             artifacts/**/*.html
+
+  # alerte : une issue GitHub (notification par mail au propriétaire du dépôt)
+  # quand l'export échoue, complétée si l'échec se répète, fermée dès qu'un
+  # export repasse
+  alerte:
+    needs: [export-points, export-stats, release, pages]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULTATS: ${{ toJSON(needs) }}
+        run: |
+          TITRE="Export hebdomadaire en échec"
+          RUN="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          ECHECS=$(echo "$RESULTATS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')
+          NUM=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITRE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$ECHECS" ]; then
+            CORPS="Jobs en échec : **$ECHECS** ($(date -u '+%d/%m/%Y %H:%M') UTC). Détails : $RUN"
+            if [ -n "$NUM" ]; then gh issue comment "$NUM" --repo "$GITHUB_REPOSITORY" --body "$CORPS"
+            else gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITRE" --body "$CORPS"; fi
+          elif [ -n "$NUM" ]; then
+            gh issue close "$NUM" --repo "$GITHUB_REPOSITORY" --comment "Export rétabli : $RUN"
+          fi
