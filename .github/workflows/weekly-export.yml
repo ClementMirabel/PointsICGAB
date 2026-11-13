@@ -18,6 +18,7 @@ on:
       - "export_excel.py"
       - "export_web.py"
       - "icbad.py"
+      - "historique_ic.py"
       - "web/**"
       - "requirements.txt"
       - ".github/workflows/weekly-export.yml"
@@ -63,6 +64,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # historique des valeurs IC figées par week-end (historique_ic.py) :
+      # conservé d'une semaine sur l'autre sur la branche "donnees"
+      - name: Fetch IC value history
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git clone --quiet --depth 1 --branch donnees "$URL" "$RUNNER_TEMP/donnees"; then
+            cp "$RUNNER_TEMP/donnees/historique_valeurs.json" . 2>/dev/null || echo "pas encore d'historique"
+          else
+            # branche absente (première fois) : dépôt vide, la branche sera créée au push
+            mkdir -p "$RUNNER_TEMP/donnees" && cd "$RUNNER_TEMP/donnees"
+            git init --quiet -b donnees && git remote add origin "$URL"
+          fi
+
       - name: Run statsJoueurs.py
         env:
           MYFFBAD_LICENCE: ${{ secrets.MYFFBAD_LICENCE }}
@@ -83,6 +99,20 @@ jobs:
             statsJoueurs.xlsx
             statsJoueurs.html
             statsJoueurs_resume.json
+
+      # push simple (jamais forcé) : si la branche a bougé ou n'a pas pu être
+      # lue, le push est refusé plutôt que d'écraser l'historique existant
+      - name: Save IC value history
+        if: ${{ success() && hashFiles('historique_valeurs.json') != '' }}
+        run: |
+          cp historique_valeurs.json "$RUNNER_TEMP/donnees/"
+          cd "$RUNNER_TEMP/donnees"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add historique_valeurs.json
+          if git diff --cached --quiet; then echo "historique inchangé"; exit 0; fi
+          git commit --quiet -m "Valeurs IC figées - export du $(date +%Y-%m-%d)"
+          git push origin donnees
 
       # dump complet (cache pour --from-json), gardé en artefact du run
       # seulement - pas publié dans la release
@@ -134,9 +164,12 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
 
+  # la release précédente est supprimée puis recréée : seulement si les deux
+  # exports ont réussi, sinon on garderait une release amputée (constaté :
+  # myffbad injoignable -> statsJoueurs.xlsx/html disparus de la release)
   release:
     needs: [export-points, export-stats]
-    if: ${{ !cancelled() }}
+    if: ${{ needs.export-points.result == 'success' && needs.export-stats.result == 'success' }}
     runs-on: ubuntu-latest
 
     steps:

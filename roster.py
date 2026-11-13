@@ -1,5 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 LEAGUE = "3304"
 COMMITTEE = "110"
@@ -76,8 +78,18 @@ def valeur_icr(tableau):
 
 
 def new_session():
+    """Session HTTP avec réessais automatiques : une coupure ponctuelle
+    (timeout de connexion, erreur 5xx) ne doit pas faire échouer tout
+    l'export - constaté en CI : myffbad.fr injoignable pendant quelques
+    secondes depuis le runner GitHub, export du jeudi perdu. Jusqu'à 5
+    nouvelles tentatives, espacées de 5 s, 10 s, 20 s, 40 s, 80 s."""
     session = requests.Session()
     session.headers.update({"User-Agent": USER_AGENT})
+    reessais = Retry(total=5, connect=5, read=5, status=5, backoff_factor=5,
+                     status_forcelist=(429, 500, 502, 503, 504), allowed_methods=("GET", "HEAD"))
+    adaptateur = HTTPAdapter(max_retries=reessais)
+    session.mount("https://", adaptateur)
+    session.mount("http://", adaptateur)
     return session
 
 
