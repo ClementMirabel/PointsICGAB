@@ -341,50 +341,61 @@ def _norm_nom(nom):
 
 
 def rivalites(all_stats, noms_club=None):
-    """Confrontations entre joueurs du club (matchs internes), comptées une
-    fois chacune : par tableau (Simple : joueur contre joueur ; Double et
-    Mixte : paire contre paire) et "Tous" (joueur contre joueur, toutes
-    disciplines : en double, chaque joueur d'une paire affronte les deux de
-    l'autre). -> {tableau: [{a, b, total, va, vb, matchs: [...]}]}."""
-    # rivalité INTERNE : les deux côtés entièrement du club. "intra_club" ne
-    # regarde que les adversaires - en double, le partenaire peut être d'un
-    # autre club (constaté : un joueur extérieur apparaissait en rivalité).
-    # Contrôle par le club du partenaire, et par les noms de l'effectif du club.
+    """Confrontations entre joueurs du club, chaque match compté une fois
+    (il figure dans le match_log de chacun des joueurs du club présents) :
+
+    - "Tous" : 1 contre 1 entre deux joueurs du club, toutes disciplines,
+      même si l'un ou l'autre jouait avec un partenaire extérieur (en double,
+      chaque joueur du club d'un côté affronte chaque joueur du club de
+      l'autre) ;
+    - "Simple" : joueur du club contre joueur du club ;
+    - "Double" / "Mixte" : paire contre paire, seulement quand les deux
+      paires sont entièrement composées de joueurs du club.
+
+    Appartenance au club : noms de l'effectif complet (noms_club) - le
+    drapeau intra_club ne suffit pas (il exige deux adversaires du club et
+    ignore le partenaire). -> {tableau: [{a, b, total, va, vb, matchs}]},
+    chaque match : date, compétition, tableau, côtés gagnant / perdant
+    (noms complets, partenaires extérieurs compris), score vu du gagnant."""
     club = {_norm_nom(n) for n in (noms_club or [])}
-    du_club = lambda nom: not club or _norm_nom(nom) in club
+    du_club = lambda nom: _norm_nom(nom) in club
     vus = {}
     for s in all_stats:
         for m in s["match_log"]:
-            if not m["intra_club"]:
+            adv = tuple(sorted(m["noms_adverses"]))
+            if not adv or not any(du_club(n) for n in adv):
                 continue
             partenaire = m.get("partenaire_nom")
-            if partenaire and (m.get("partenaire_club") not in (None, results.MY_CLUB) or not du_club(partenaire)):
-                continue
-            if not all(du_club(n) for n in m["noms_adverses"]):
-                continue
             moi = tuple(sorted([s["Nom"]] + ([partenaire] if partenaire else [])))
-            adv = tuple(sorted(m["noms_adverses"]))
-            if not adv:
-                continue
             cle = (m["date"], m["evenement"], m["tableau"], frozenset([moi, adv]))
             if cle not in vus:
                 vus[cle] = {"tableau": m["tableau"], "date": m["date"], "evenement": m["evenement"],
                             "gagnant": moi if m["victoire"] else adv, "perdant": adv if m["victoire"] else moi,
-                            "score": " / ".join(f"{a}-{b}" if m["victoire"] else f"{b}-{a}" for a, b in m["sets_detail"])}
+                            "score": " / ".join(f"{a}-{b}" if m["victoire"] else f"{b}-{a}" for a, b in m["sets_detail"]),
+                            "forfait": bool(m.get("forfait"))}
 
-    def _ajouter(groupes, x, y, match):
+    def _ajouter(groupes, x, y, match, x_gagne):
         a, b = sorted([x, y])
         g = groupes.setdefault((a, b), {"a": " / ".join(a), "b": " / ".join(b), "total": 0, "va": 0, "vb": 0, "matchs": []})
         g["total"] += 1
-        g["va" if match["gagnant_cote"] == a else "vb"] += 1
-        g["matchs"].append({k: match[k] for k in ("date", "evenement", "tableau", "score")} | {"gagnant": " / ".join(match["gagnant_cote"])})
+        g["va" if (a == x) == x_gagne else "vb"] += 1
+        g["matchs"].append({"date": match["date"], "evenement": match["evenement"], "tableau": match["tableau"],
+                            "score": match["score"], "gagnant": " / ".join(match["gagnant"]),
+                            "perdant": " / ".join(match["perdant"]), "forfait": match["forfait"]})
 
     out = {t: {} for t in (*TABLEAUX, "Tous")}
     for v in vus.values():
-        _ajouter(out[v["tableau"]], v["gagnant"], v["perdant"], {**v, "gagnant_cote": v["gagnant"]})
-        for x in v["gagnant"]:
-            for y in v["perdant"]:
-                _ajouter(out["Tous"], (x,), (y,), {**v, "gagnant_cote": (x,)})
+        g_club = [n for n in v["gagnant"] if du_club(n)]
+        p_club = [n for n in v["perdant"] if du_club(n)]
+        for x in g_club:
+            for y in p_club:
+                _ajouter(out["Tous"], (x,), (y,), v, True)
+        # par tableau : les deux côtés entièrement du club
+        if len(g_club) == len(v["gagnant"]) and len(p_club) == len(v["perdant"]) and g_club and p_club:
+            _ajouter(out[v["tableau"]], v["gagnant"], v["perdant"], v, True)
+    for groupes in out.values():
+        for g in groupes.values():
+            g["matchs"].sort(key=lambda m: m["date"], reverse=True)
     return {t: sorted(g.values(), key=lambda r: (-r["total"], r["a"])) for t, g in out.items()}
 
 

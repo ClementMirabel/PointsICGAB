@@ -626,6 +626,7 @@ function renderJoueur(j) {
         <div class="chart" id="courbe"></div>
       </div></section>
     ${auMoinsUnFait ? `<section><h2>Faits marquants</h2><div class="grid facts">${facts.join("")}</div></section>` : ""}
+    ${sectionConfrontations(j)}
     ${j.partenaires.length ? `<section><h2>Partenaires</h2>
       <p class="hint">Double et mixte. Points de cote cumulés sur les matchs joués ensemble.</p>
       <div class="card scroll"><table class="t"><thead><tr><th>Partenaire</th><th class="hide-sm">Tableau</th><th class="r">Matchs</th><th class="r hide-sm">Victoires</th><th class="r">% victoire</th><th class="r">Points de cote</th></tr></thead><tbody>
@@ -726,6 +727,22 @@ function sectionIcTournois(j) {
       ${eq.map(([n, ms]) => { const b = bilan(ms); return `<tr><td><span class="eq">Équipe ${n}</span></td><td class="r num">${b.n}</td><td class="r num">${pct(b.pct)}</td><td class="r num ${deltaCls(b.ppm)}">${signed(b.ppm, 1)}</td></tr>`; }).join("")}
       </tbody></table></div>` : ""}
     </div></section>`;
+}
+
+/* fiche joueur : 1 contre 1 face aux autres joueurs du club (tous tableaux, partenaires extérieurs compris) */
+function sectionConfrontations(j) {
+  const liste = (DATA.club.rivalites?.Tous || []).filter(r => r.a === j.nom || r.b === j.nom).map(r => {
+    const moiA = r.a === j.nom;
+    return { adv: moiA ? r.b : r.a, v: moiA ? r.va : r.vb, d: moiA ? r.vb : r.va, total: r.total, matchs: r.matchs };
+  }).sort((x, y) => y.total - x.total || x.adv.localeCompare(y.adv));
+  if (!liste.length) return "";
+  return `<section><h2>Confrontations avec des joueurs du club</h2>
+    <p class="hint">Matchs où ${esc(j.nom)} était opposé(e) à un autre joueur du club, tous tableaux confondus (même avec un partenaire extérieur). Cliquer pour le détail.</p>
+    <div class="card">${liste.map(x => `<details class="riv"><summary>
+      <span class="riv-a ${x.v > x.d ? "gagne" : ""}">${esc(j.nom)}</span><b class="num">${x.v} – ${x.d}</b>
+      <span class="riv-b ${x.d > x.v ? "gagne" : ""}">${lienNom(x.adv)}</span>
+      <span class="muted small">${x.total} confrontation${x.total > 1 ? "s" : ""}</span></summary>
+      ${x.matchs.map(ligneMatchRivalite).join("")}</details>`).join("")}</div></section>`;
 }
 
 function fact(t, titre, f, detail, extra) {
@@ -1046,6 +1063,11 @@ function clubTournoi(el, idx) {
       <div class="grid g3">${cartes || `<div class="empty">Aucun match trouvé.</div>`}</div></section>`;
 }
 
+/* une confrontation interne : "A / B bat C / D · score" (joueurs du club cliquables, partenaires extérieurs en clair) */
+const cotesRivalite = noms => noms.split(" / ").map(lienNom).join(" / ");
+const ligneMatchRivalite = m => `<div class="small" style="padding:3px 0 3px 18px">${fDate(m.date)} · <span class="tagsw"><i style="background:${TC[m.tableau]}"></i>${TL[m.tableau]}</span> ${esc(m.evenement)} ·
+  <b>${cotesRivalite(m.gagnant)}</b> bat ${m.perdant ? cotesRivalite(m.perdant) : ""} ${m.forfait ? '<span class="tag">forfait</span>' : `<span class="num muted">${esc(m.score)}</span>`}</div>`;
+
 /* -- Records */
 function clubRecords(el) {
   const elig = DATA.club.tournois.filter(t => t.joueurs >= 5);
@@ -1069,7 +1091,7 @@ function clubRecords(el) {
       <p class="hint">Pour chaque tableau et chaque genre : ▲ le joueur qui a gagné le plus de points de cote sur un seul mois, ▼ celui qui en a perdu le plus.</p>
       <div class="grid g3">${cartesPics}</div></section>
     <section><h2>Rivalités internes</h2>
-      <p class="hint">Matchs entre joueurs du club (tournois). En double et mixte : paire contre paire. « Tous » : joueur contre joueur, toutes disciplines confondues. Cliquer une rivalité pour ses matchs.</p>
+      <p class="hint">« Tous » : 1 contre 1 entre deux joueurs du club, tous tableaux confondus, même avec un partenaire extérieur. Simple : joueur contre joueur. Double et mixte : paire contre paire, uniquement des paires 100 % club. Cliquer une rivalité pour ses matchs.</p>
       <div class="chips" id="rivT" style="margin-bottom:10px"></div><div id="rivListe"></div></section>`;
   const riv = DATA.club.rivalites || {};
   const draw = () => {
@@ -1080,7 +1102,7 @@ function clubRecords(el) {
     $("#rivListe").innerHTML = liste.length ? `<div class="card">${liste.map(r => `<details class="riv"><summary>
         <span class="riv-a ${r.va > r.vb ? "gagne" : ""}">${noms(r.a)}</span><b class="num">${r.va} – ${r.vb}</b><span class="riv-b ${r.vb > r.va ? "gagne" : ""}">${noms(r.b)}</span>
         <span class="muted small">${r.total} confrontation${r.total > 1 ? "s" : ""}</span></summary>
-        ${(r.matchs || []).map(m => `<div class="small" style="padding:3px 0 3px 18px">${fDate(m.date)} · <span class="tagsw"><i style="background:${TC[m.tableau]}"></i>${TL[m.tableau]}</span> ${esc(m.evenement)} · victoire ${esc(m.gagnant)} <span class="num muted">${esc(m.score)}</span></div>`).join("")}</details>`).join("")}</div>`
+        ${(r.matchs || []).map(ligneMatchRivalite).join("")}</details>`).join("")}</div>`
       : `<div class="card empty">Aucune confrontation interne ${t === "Tous" ? "" : "en " + t.toLowerCase()} cette saison.</div>`;
   };
   $("#rivT").onclick = e => { const b = e.target.closest("[data-t]"); if (!b) return; state.rivTableau = b.dataset.t; draw(); };
