@@ -424,7 +424,7 @@ def _interclubs_payload(interclubs, all_stats):
             "points_cote": {lic: {eq: _r(v) for eq, v in par_eq.items()} for lic, par_eq in points.items()}}
 
 
-def build_payload(all_stats, interclubs=None, effectif=None):
+def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
     joueurs = sorted((_joueur_payload(s) for s in all_stats), key=lambda j: j["nom"])
     return {
         "genere_le": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -434,14 +434,16 @@ def build_payload(all_stats, interclubs=None, effectif=None):
         "club": _club_payload(all_stats, interclubs),
         "interclubs": _interclubs_payload(interclubs, all_stats),
         "effectif": effectif,
+        # valeurs figées par week-end d'interclubs (voir historique_ic)
+        "valeurs_historiques": (historique or {}).get("weekends") or {},
     }
 
 
-def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interclubs=None, effectif=None):
+def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interclubs=None, effectif=None, historique=None):
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
     assert DATA_PLACEHOLDER in template, f"{DATA_PLACEHOLDER} absent du gabarit {template_path}"
-    payload = build_payload(all_stats, interclubs, effectif)
+    payload = build_payload(all_stats, interclubs, effectif, historique)
     payload["precedent"] = resume_precedent()
     with open(os.path.join(os.path.dirname(os.path.abspath(output_path)), RESUME_NOM), "w", encoding="utf-8") as f:
         json.dump(resume(payload), f, ensure_ascii=False, default=_json_default)

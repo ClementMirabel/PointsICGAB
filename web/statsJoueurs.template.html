@@ -1767,11 +1767,21 @@ const affectationsDe = samedi => PLAN.affectations[samedi] || (PLAN.affectations
 const joueursAffectes = (samedi, numero) => Object.entries(PLAN.affectations[samedi] || {})
   .filter(([, n]) => n === numero).map(([lic]) => joueurPlan(lic)).filter(Boolean);
 
-/* participants réels d'un week-end passé : joueurs ayant joué >= 1 match, par équipe */
+/* valeurs figées par week-end (historique_ic.py) : classements, cotes et
+   valeurs ICN/ICR relevés à l'export qui a suivi le week-end, pour que la
+   valeur d'une équipe passée ne varie plus avec les classements du jour */
+const HISTO = DATA.valeurs_historiques || {};
+function joueurAuWeekend(lic, samedi) {
+  const fige = HISTO[samedi]?.joueurs?.[lic];
+  if (!fige) return null;
+  const base = joueurPlan(lic) || { licence: lic, nom: fige.nom, sexe: icSexe.get(lic) };
+  return { ...base, classements: fige.classements, cotes: fige.cotes, meilleur_tableau: fige.meilleur_tableau, icn: fige.icn, icr: fige.icr, fige: HISTO[samedi].date };
+}
+/* participants réels d'un week-end passé : joueurs ayant joué >= 1 match, par équipe, avec leurs valeurs figées si disponibles */
 function participantsReels(w, numero) {
   const lics = new Set();
   for (const { e, r } of w.items) if (e.numero === numero) for (const m of r.matchs) for (const p of m.club) if (p.licence) lics.add(p.licence);
-  return [...lics].map(l => joueurPlan(l) || { licence: l, nom: (icJoueurs.get(l) || {}).nom || l, sexe: icSexe.get(l), classements: [], cotes: [], icn: 0, icr: 0 });
+  return [...lics].map(l => joueurAuWeekend(l, w.samedi) || joueurPlan(l) || { licence: l, nom: (icJoueurs.get(l) || {}).nom || l, sexe: icSexe.get(l), classements: [], cotes: [], icn: 0, icr: 0 });
 }
 /* équipes dans lesquelles un joueur a déjà joué cette saison (nb de rencontres) - aide à la saisie */
 const historiqueIC = new Map();
@@ -2017,7 +2027,10 @@ function planWeekend(el, w, wes) {
         ${ps.map(p => `<div class="pj"><span>${lienJoueurIC(p.licence, p.nom)}${badgeMute(estMute(p.licence))}</span><span class="muted small">${p.sexe || ""}</span><b class="num" title="Valeur ${echelle(n)}">${valeurPour(p, n)}</b></div>`).join("") || `<div class="muted">Aucune feuille de match.</div>`}
         <div class="pied">Valeur ${echelle(n)} (3 H + 3 F) : <b>${valeurs[n]}</b></div></div>`;
     }).join("");
-    el.innerHTML = entete + `<p class="hint">Week-end passé : joueurs ayant joué au moins un match, d'après les feuilles de rencontre icbad. Valeurs calculées avec les classements actuels.</p>
+    const fige = HISTO[w.samedi]?.date;
+    el.innerHTML = entete + `<p class="hint">Week-end passé : joueurs ayant joué au moins un match, d'après les feuilles de rencontre icbad. ${fige
+      ? `Valeurs figées le ${fDate(fige)} (export qui a suivi le week-end) : elles ne bougent plus avec les classements.`
+      : "Valeurs calculées avec les classements actuels : elles seront figées au prochain export."}</p>
       <div class="grid plan-grid" style="--cols:${colsPlan(w.equipes.length)}">${cartes}</div><div style="margin-top:12px">${controlesValeurs(w, valeurs)}</div>`;
     brancherActions(() => {});
     return;

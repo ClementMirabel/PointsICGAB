@@ -31,6 +31,7 @@ from selenium.common.exceptions import TimeoutException
 
 import export_excel
 import export_web
+import historique_ic
 import icbad
 import pointsIC
 import results
@@ -817,7 +818,14 @@ def main(licence_filter):
 
     stats.normaliser_club(all_stats)
     export_web.write_stats_json(all_stats, os.path.join(APP_DIR, "statsJoueurs.json"), interclubs, effectif)
-    ecrire_exports(all_stats, interclubs, effectif)
+    # valeurs des joueurs figées pour les week-ends d'interclubs qui viennent de se terminer
+    chemin_hist = os.path.join(APP_DIR, historique_ic.FICHIER)
+    historique = historique_ic.charger(chemin_hist)
+    ajoutes = historique_ic.mettre_a_jour(historique, interclubs, effectif)
+    historique_ic.sauver(historique, chemin_hist)
+    print(f"Historique des valeurs IC : {len(historique['weekends'])} week-end(s)"
+          + (f", ajouté(s) : {', '.join(ajoutes)}" if ajoutes else ", rien de nouveau"))
+    ecrire_exports(all_stats, interclubs, effectif, historique)
 
 
 def scrape_resultats(driver, licence, nom):
@@ -899,12 +907,12 @@ def collecter_interclubs():
         return None
 
 
-def ecrire_exports(all_stats, interclubs=None, effectif=None):
+def ecrire_exports(all_stats, interclubs=None, effectif=None, historique=None):
     """Excel + page web (HTML autonome) - all_stats déjà normalisé."""
     output_path = os.path.join(APP_DIR, "statsJoueurs.xlsx")
     export_excel.write_stats_excel(all_stats, output_path)
     html_path = export_web.write_stats_html(all_stats, os.path.join(APP_DIR, "statsJoueurs.html"),
-                                            interclubs=interclubs, effectif=effectif)
+                                            interclubs=interclubs, effectif=effectif, historique=historique)
     print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}, {html_path}")
 
 
@@ -923,7 +931,9 @@ def main_from_json(path):
             pointsIC.compute_IC_points(player)
         effectif = export_web.effectif_payload(players)
     stats.normaliser_club(all_stats)
-    ecrire_exports(all_stats, interclubs, effectif)
+    # historique local en lecture seule : le figer ici daterait les valeurs d'aujourd'hui
+    historique = historique_ic.charger(os.path.join(APP_DIR, historique_ic.FICHIER))
+    ecrire_exports(all_stats, interclubs, effectif, historique)
 
 
 if __name__ == "__main__":
