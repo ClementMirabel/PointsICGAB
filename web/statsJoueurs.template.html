@@ -848,12 +848,12 @@ Object.assign(state, { clubOnglet: "Overall", overallSexe: "tous", profilTableau
 
 function renderClub(sous, reste = []) {
   // pages de détail rattachées à une sous-page (onglet surligné)
-  const parent = { detail: "categories", tournoi: "competitions" }[sous];
+  const parent = { detail: reste[0] === "or-joueur" || reste[0] === "or" ? "profil" : "categories", tournoi: "competitions" }[sous];
   if (!parent && !SOUS_PAGES.some(([k]) => k === sous)) sous = "apercu";
   const actif = parent || sous;
   $("#main").innerHTML = `<nav class="chips subnav">${SOUS_PAGES.map(([k, l]) =>
     `<a class="chip ${k === actif ? "on" : ""}" href="#club/${k}" ${k === actif ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav><div id="club"></div>`;
-  if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1]);
+  if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1], reste[2]);
   if (sous === "tournoi") return clubTournoi($("#club"), reste[0]);
   ({ apercu: clubApercu, classement: clubClassement, competitions: clubCompetitions,
      categories: clubCategories, profil: clubProfil, records: clubRecords })[sous]($("#club"));
@@ -952,10 +952,12 @@ const DETAILS = {
   propre: { titre: "Victoires : propres ou accrochées", hint: "Victoires (au moins 2 sets, forfaits exclus) : propre = sans perdre de set." },
   apres1: { titre: "Matchs après avoir gagné le 1er set", hint: "Au moins 2 sets, forfaits exclus : le joueur a-t-il conclu ?" },
   comeback: { titre: "Matchs après avoir perdu le 1er set", hint: "Au moins 2 sets, forfaits exclus : le joueur est-il revenu ?" },
+  or: { titre: "Sets au point en or", hint: "Sets terminés à 21-20, décidés sur une seule balle." },
 };
 const lienDetail = (type, cat, contenu) => `<a href="#club/detail/${type}/${encodeURIComponent(cat)}" title="Voir la liste">${contenu}</a>`;
 
-function clubDetail(el, type, catEnc) {
+function clubDetail(el, type, catEnc, extra) {
+  if (type === "or-joueur") return detailOrJoueur(el, catEnc, extra);
   const cat = decodeURIComponent(catEnc || ""), def = DETAILS[type];
   if (!def) { el.innerHTML = `<div class="card empty">Liste inconnue.</div>`; return; }
   const ms = matchsClubUniques().filter(m => categoriesMatch(m.tableau, m.sexes).includes(cat)).sort((a, b) => b.date.localeCompare(a.date));
@@ -967,10 +969,11 @@ function clubDetail(el, type, catEnc) {
     <td class="num" style="white-space:nowrap">${setsDe(m.score).map((st, i) => i === marque ? `<b class="set-marque">${st.join("-")}</b>` : st.join("-")).join(" / ")}</td>
     ${extra}<td><span class="res ${m.victoire ? "v" : "d"}">${m.victoire ? "V" : "D"}</span></td></tr>`;
   let entete = `<th>Date</th><th></th><th>GAB</th><th>Adversaire(s)</th><th>Score</th>`;
-  if (type === "clutch") {
-    for (const m of ms) setsDe(m.score).forEach((st, i) => { if (Math.abs(st[0] - st[1]) <= 2) lignes.push({ m, i, gagne: st[0] > st[1] }); });
+  if (type === "clutch" || type === "or") {
+    const ecartMax = type === "or" ? 1 : 2;
+    for (const m of ms) setsDe(m.score).forEach((st, i) => { const e = Math.abs(st[0] - st[1]); if (e <= ecartMax && (type === "clutch" || e === 1)) lignes.push({ m, i, gagne: st[0] > st[1] }); });
     const g = lignes.filter(x => x.gagne).length;
-    resume = `${lignes.length} sets serrés · ${g} gagnés (${pct(lignes.length ? g / lignes.length * 100 : null)})`;
+    resume = `${lignes.length} sets ${type === "or" ? "au point en or" : "serrés"} · ${g} gagnés (${pct(lignes.length ? g / lignes.length * 100 : null)})`;
     entete += `<th>Set</th><th>Match</th>`;
     lignes = lignes.map(({ m, i, gagne }) => ligneMatch(m, `<td><span class="res ${gagne ? "v" : "d"}" title="Set ${gagne ? "gagné" : "perdu"}">${gagne ? "V" : "D"}</span></td>`, i));
   } else if (type === "outsider" || type === "favori") {
@@ -987,10 +990,32 @@ function clubDetail(el, type, catEnc) {
     if (type === "propre") { entete += `<th>Type</th>`; lignes = sel.map(m => ligneMatch(m, `<td>${setsDe(m.score).every(st => st[0] > st[1]) ? "propre" : '<span class="muted">en 3 sets</span>'}</td>`)); }
     else lignes = sel.map(m => ligneMatch(m, "", 0));
   }
-  el.innerHTML = `<div class="chips subnav"><a class="chip" href="#club/categories">← Stats club</a></div>
+  el.innerHTML = `<div class="chips subnav">${type === "or" ? `<a class="chip" href="#club/profil">← Profil de jeu</a>` : `<a class="chip" href="#club/categories">← Stats club</a>`}</div>
     <div class="card" style="margin-bottom:14px"><h2 style="margin:0;font-size:17px">${def.titre} · ${esc(catLabel(cat))}</h2>
       <p class="hint" style="margin:4px 0 0">${def.hint} ${resume}. Chaque match n'est compté qu'une fois, matchs internes exclus.</p></div>
     <div class="card scroll">${lignes.length ? `<table class="t"><thead><tr>${entete}<th></th></tr></thead><tbody>${lignes.join("")}</tbody></table>` : `<div class="empty">Aucun match.</div>`}</div>`;
+}
+
+/* sets au point en or d'un joueur (tous ses matchs, comme la colonne "Point en or" du profil de jeu) */
+function detailOrJoueur(el, licence, tableauEnc) {
+  const j = byLicence.get(licence), t = decodeURIComponent(tableauEnc || "Tous");
+  if (!j) { el.innerHTML = `<div class="card empty">Joueur introuvable.</div>`; return; }
+  const lignes = [];
+  for (const m of j.matchs) if (t === "Tous" || m.tableau === t)
+    setsDe(m.score).forEach((st, i) => { if (Math.abs(st[0] - st[1]) === 1) lignes.push({ m, i, gagne: st[0] > st[1] }); });
+  lignes.sort((a, b) => b.m.date.localeCompare(a.m.date));
+  const g = lignes.filter(x => x.gagne).length;
+  el.innerHTML = `<div class="chips subnav"><a class="chip" href="#club/profil">← Profil de jeu</a></div>
+    <div class="card" style="margin-bottom:14px"><h2 style="margin:0;font-size:17px">Sets au point en or · <a href="#joueur/${j.licence}">${esc(j.nom)}</a>${t !== "Tous" ? ` · ${t}` : ""}</h2>
+      <p class="hint" style="margin:4px 0 0">Sets terminés à 21-20. ${lignes.length} set(s) · ${g} gagné(s).</p></div>
+    <div class="card scroll">${lignes.length ? `<table class="t"><thead><tr><th>Date</th><th></th><th>Compétition</th><th>Adversaire(s)</th><th>Score</th><th>Set</th><th>Match</th></tr></thead><tbody>
+      ${lignes.map(({ m, i, gagne }) => `<tr><td class="num" style="white-space:nowrap">${fDate(m.date)}</td>
+        <td><span class="tagsw"><i style="background:${TC[m.tableau]}"></i>${TL[m.tableau]}</span></td>
+        <td>${esc(m.evenement)}${m.partenaire ? `<div class="small muted">avec ${esc(m.partenaire)}</div>` : ""}</td>
+        <td>${m.adversaires.map(esc).join(" / ")}</td>
+        <td class="num" style="white-space:nowrap">${setsDe(m.score).map((st, k) => k === i ? `<b class="set-marque">${st.join("-")}</b>` : st.join("-")).join(" / ")}</td>
+        <td><span class="res ${gagne ? "v" : "d"}">${gagne ? "V" : "D"}</span></td>
+        <td><span class="res ${m.victoire ? "v" : "d"}">${m.victoire ? "V" : "D"}</span></td></tr>`).join("")}</tbody></table>` : `<div class="empty">Aucun set au point en or.</div>`}</div>`;
 }
 
 /* -- page d'un tournoi : matchs des joueurs du club, une carte par joueur */
@@ -1282,11 +1307,14 @@ function clubCategories(el) {
 
 /* -- Profil de jeu (ex-onglet Stats avancées) */
 function clubProfil(el) {
-  const or = DATA.club.sets_point_en_or;
+  // sets au point en or du club : chaque match compté une fois (comme la liste détaillée)
+  const setsOr = matchsClubUniques().flatMap(m => setsDe(m.score).filter(st => Math.abs(st[0] - st[1]) === 1));
+  const or = { joues: setsOr.length, gagnes: setsOr.filter(st => st[0] > st[1]).length, joueurs: DATA.club.sets_point_en_or.joueurs };
+  const lienOr = c => lienDetail("or", "Club (tous tableaux)", c);
   el.innerHTML = `
     <div class="grid g4">
-      <div class="card stat"><div class="v num">${or.joues}</div><div class="l">sets au point en or (21-20) joués</div></div>
-      <div class="card stat"><div class="v num">${or.gagnes} – ${or.joues - or.gagnes}</div><div class="l">gagnés – perdus</div></div>
+      <div class="card stat"><div class="v num">${or.joues ? lienOr(or.joues) : 0}</div><div class="l">sets au point en or (21-20) joués · cliquer pour la liste</div></div>
+      <div class="card stat"><div class="v num">${or.joues ? lienOr(`${or.gagnes} – ${or.joues - or.gagnes}`) : "–"}</div><div class="l">gagnés – perdus</div></div>
       <div class="card stat"><div class="v num">${or.joues ? pct(or.gagnes / or.joues * 100) : "–"}</div><div class="l">de ces sets gagnés</div></div>
       <div class="card stat"><div class="v num">${or.joueurs}</div><div class="l">joueurs en ont joué au moins un</div></div>
     </div>
@@ -1316,7 +1344,8 @@ function clubProfil(el) {
       { k: "pd", label: "Pts en défaite", val: r => r.p.points_moyens_defaite, nd: 1, num: true },
       { k: "net", label: "Set le plus net", val: r => r.p.score_max_inflige, sm: true },
       { k: "lourd", label: "Set le plus lourd", val: r => r.p.score_max_recu, sm: true },
-      { k: "or", label: "Point en or", val: r => r.x.sets_point_en_or.joues, html: r => r.x.sets_point_en_or.joues ? `${r.x.sets_point_en_or.gagnes}/${r.x.sets_point_en_or.joues}` : "–", num: true, sm: true },
+      { k: "or", label: "Point en or", val: r => r.x.sets_point_en_or.joues, num: true, sm: true,
+        html: r => r.x.sets_point_en_or.joues ? `<a href="#club/detail/or-joueur/${r.j.licence}/${encodeURIComponent(t)}" title="Voir les sets">${r.x.sets_point_en_or.gagnes}/${r.x.sets_point_en_or.joues}</a>` : "–" },
       { k: "propre", label: "Propre", val: r => r.x.dynamique.propre, html: r => pct(r.x.dynamique.propre), num: true },
       { k: "apres", label: "Après 1er set", val: r => r.x.dynamique.apres_1er_set, html: r => pct(r.x.dynamique.apres_1er_set), num: true, sm: true },
       { k: "cb", label: "Comeback", val: r => r.x.dynamique.comeback, html: r => pct(r.x.dynamique.comeback), num: true },

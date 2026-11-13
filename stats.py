@@ -791,6 +791,7 @@ def build_player_stats(player, events_par_tableau):
             "points_cote": m["points_cote"],
             "noms_adverses": m["noms_adverses"],
             "partenaire_nom": m.get("partenaire_nom"),
+            "partenaire_club": m.get("partenaire_club"),
             "forfait": _est_forfait(m),
             "ma_cote": m["ma_cote"],
             "adversaire_cote": m["adversaire_cote"],

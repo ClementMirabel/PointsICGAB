@@ -16,6 +16,7 @@ from collections import defaultdict
 from datetime import date, datetime
 
 import export_excel
+import results
 import roster
 import stats
 
@@ -279,7 +280,7 @@ def _interclubs_par_categorie(interclubs):
     return out
 
 
-def _club_payload(all_stats, interclubs=None):
+def _club_payload(all_stats, interclubs=None, effectif=None):
     """Agrégats club (ex-onglets Stats club, Tournois et Stats avancées de
     l'Excel). Chaque match réel compté une fois (voir matchs_club_uniques),
     matchs internes exclus (toujours 1 victoire + 1 défaite pour le club,
@@ -330,23 +331,38 @@ def _club_payload(all_stats, interclubs=None):
         "sets_point_en_or": {"joues": sum(x["nb_joues"] for x in sets_or),
                              "gagnes": sum(x["nb_gagnes"] for x in sets_or), "joueurs": joueurs_or},
         "tournois": [{**t, "pct": _r(t["pct"]), "points": _r(t["points"])} for t in tournois],
-        "rivalites": rivalites(all_stats),
+        "rivalites": rivalites(all_stats, {p["nom"] for p in (effectif or [])} | {s["Nom"] for s in all_stats}),
         "pics_mensuels": [{**p, "delta": _r(p["delta"])} for p in export_excel._pics_mensuels(all_stats)],
     }
 
 
-def rivalites(all_stats):
+def _norm_nom(nom):
+    return " ".join(str(nom or "").upper().split())
+
+
+def rivalites(all_stats, noms_club=None):
     """Confrontations entre joueurs du club (matchs internes), comptées une
     fois chacune : par tableau (Simple : joueur contre joueur ; Double et
     Mixte : paire contre paire) et "Tous" (joueur contre joueur, toutes
     disciplines : en double, chaque joueur d'une paire affronte les deux de
     l'autre). -> {tableau: [{a, b, total, va, vb, matchs: [...]}]}."""
+    # rivalité INTERNE : les deux côtés entièrement du club. "intra_club" ne
+    # regarde que les adversaires - en double, le partenaire peut être d'un
+    # autre club (constaté : un joueur extérieur apparaissait en rivalité).
+    # Contrôle par le club du partenaire, et par les noms de l'effectif du club.
+    club = {_norm_nom(n) for n in (noms_club or [])}
+    du_club = lambda nom: not club or _norm_nom(nom) in club
     vus = {}
     for s in all_stats:
         for m in s["match_log"]:
             if not m["intra_club"]:
                 continue
-            moi = tuple(sorted([s["Nom"]] + ([m["partenaire_nom"]] if m.get("partenaire_nom") else [])))
+            partenaire = m.get("partenaire_nom")
+            if partenaire and (m.get("partenaire_club") not in (None, results.MY_CLUB) or not du_club(partenaire)):
+                continue
+            if not all(du_club(n) for n in m["noms_adverses"]):
+                continue
+            moi = tuple(sorted([s["Nom"]] + ([partenaire] if partenaire else [])))
             adv = tuple(sorted(m["noms_adverses"]))
             if not adv:
                 continue
@@ -431,7 +447,7 @@ def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
         "saison": _saison(),
         "excel_url": EXCEL_URL,
         "joueurs": joueurs,
-        "club": _club_payload(all_stats, interclubs),
+        "club": _club_payload(all_stats, interclubs, effectif),
         "interclubs": _interclubs_payload(interclubs, all_stats),
         "effectif": effectif,
         # valeurs figées par week-end d'interclubs (voir historique_ic)
