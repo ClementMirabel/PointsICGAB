@@ -1,18 +1,17 @@
+"""
+Valeur IC de tous les joueurs du club (classements publics myffbad) ->
+pointsIC.xlsx, filtré (Valeur IC >= 24) et trié. Exécuté chaque semaine par
+le workflow ; compute_IC_points est aussi utilisé par statsJoueurs.py.
+
+    python pointsIC.py
+"""
 import os
-import sys
+
 import openpyxl
 
 import roster
 
-# écrit toujours le xlsx à côté de l'exécutable, peu importe le dossier
-# "courant" depuis lequel l'app a été lancée (double-clic Finder/Explorer).
-# Sur Mac, le binaire réel vit caché dans pointsIC.app/Contents/MacOS/bin ;
-# le lanceur du bundle exporte POINTSIC_OUTPUT_DIR vers l'emplacement visible
-# de l'app (là où l'utilisateur s'attend à voir apparaître le xlsx).
-if getattr(sys, "frozen", False):
-    APP_DIR = os.environ.get("POINTSIC_OUTPUT_DIR") or os.path.dirname(os.path.abspath(sys.executable))
-else:
-    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def compute_IC_points(player):
@@ -81,17 +80,11 @@ def write_summaries(data):
 
 
 if __name__ == "__main__":
-    try:
-        with roster.new_session() as session:
-            players = roster.build_players(session)
+    # pas de try/except : une erreur doit faire échouer le job CI (code de
+    # sortie non nul) plutôt que produire un export manquant "réussi"
+    with roster.new_session() as session:
+        players = roster.build_players(session)
 
-        results = [compute_IC_points(player) for player in players]
-        written, output_path = write_summaries(results)
-        print(f"{len(results)} joueurs traités, {written} écrits (Valeur IC >= 24) -> {output_path}")
-    except Exception as e:
-        print(f"Erreur : {e}")
-
-    # ne bloque que si un humain est vraiment devant un terminal
-    # (évite un EOFError quand le script tourne sans surveillance, ex. CI)
-    if sys.stdin.isatty():
-        input("\nAppuie sur Entrée pour fermer...")
+    results = [compute_IC_points(player) for player in players]
+    written, output_path = write_summaries(results)
+    print(f"{len(results)} joueurs traités, {written} écrits (Valeur IC >= 24) -> {output_path}")

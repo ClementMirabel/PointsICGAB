@@ -1,67 +1,76 @@
-# PointsICGAB
+# PointsICGAB — stats et interclubs du GAB38
 
-Calcule la Valeur IC de tous les joueurs du club GAB38 à partir des classements publics de [myffbad.fr](https://myffbad.fr/recherche/les-tops), et exporte un Excel filtré (Valeur IC ≥ 24) et trié.
+Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclubs et planificateur de compositions, mis à jour automatiquement chaque semaine à partir de [myffbad.fr](https://myffbad.fr) et [icbad.ffbad.org](https://icbad.ffbad.org/instance/GAB38).
 
-## Fichier Excel (mise à jour automatique)
+## 🌐 La page web
 
-Pas besoin d'installer quoi que ce soit : un export à jour est généré tous les **jeudis vers midi** et disponible ici :
+**[clementmirabel.github.io/PointsICGAB](https://clementmirabel.github.io/PointsICGAB/)** — même adresse chaque semaine, mise à jour dans la nuit de mercredi à jeudi.
 
-[**⬇️ Télécharger pointsIC.xlsx**](https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/pointsIC.xlsx)
+| Onglet | Contenu |
+|---|---|
+| **Club** | Aperçu (avec l'évolution depuis la semaine précédente), classement de forme, compétitions et tournois, stats par catégorie (chaque chiffre ouvre la liste des matchs concernés), profil de jeu, records et rivalités internes |
+| **Interclubs** | Équipes 1 à 6 : rencontres, joueurs alignés sur chaque match, bilans par match et par joueur, classement de poule |
+| **Planificateur** | Affectation des joueurs par week-end d'interclubs, composition des rencontres, contrôles réglementaires, export Excel |
+| **Joueurs** | Une fiche par joueur : forme par tableau, évolution de la cote, faits marquants, partenaires, matchs, interclubs |
 
-C'est un lien fixe : il pointe toujours vers la dernière version générée, pas besoin de le remettre à jour.
+### Le planificateur, en bref
 
-## Page web : stats joueurs, club, interclubs et planificateur
+- **Par week-end** : glisser les joueurs vers les équipes (ou choisir l'équipe dans leur ligne). Un joueur ne peut jouer que dans une équipe par week-end. Le bouton « Copier les effectifs du week-end précédent » reprend les équipes de la semaine d'avant.
+- **Par rencontre** : choisir les joueurs de chaque match parmi ceux affectés à l'équipe ; la composition type de l'adversaire (icbad) est préremplie.
+- **Contrôles** :
+  - valeur d'équipe (3 meilleurs joueurs + 3 meilleures joueuses), ICN pour l'équipe 1, ICR pour les autres, et hiérarchie des valeurs entre équipes (règlement ICR AURA art. 5) ;
+  - 2 matchs maximum par joueur et pas deux dans la même discipline ; hiérarchie des cotes (SH1 ≥ SH2…) ;
+  - joueurs « brûlés » : ICR AURA art. 12 pour les équipes régionales, CD38 art. 8 pour les équipes départementales (bandeau rouge si interdit, jaune si le faire jouer le bloquera ensuite) ;
+  - 2 joueurs mutés maximum par rencontre (ICR art. 13, CD38 art. 11-4).
+- **Week-ends passés** : affichage de ce qui s'est réellement joué (feuilles icbad), avec les valeurs des joueurs figées à l'export qui a suivi le week-end.
+- **Sauvegarde** : le plan est enregistré **dans le navigateur** de chacun ; il est conservé d'une semaine à l'autre mais n'est pas partagé. Pour l'échanger entre capitaines : « Exporter le plan », puis « Importer un plan » de l'autre côté.
+- **Export Excel** d'un week-end, au format du classeur « INTERCLUBS » (propositions d'équipe, valeurs, compositions).
 
-[**🌐 Ouvrir la page**](https://clementmirabel.github.io/PointsICGAB/) (mise à jour tous les jeudis, même adresse chaque semaine).
+## ⬇️ Fichiers Excel
 
-- **Club** : vue d'ensemble, classement de forme, compétitions, stats par catégorie, profil de jeu, records.
-- **Interclubs** : bilan de chaque équipe (rencontres, joueurs alignés, classement de poule), d'après [icbad.ffbad.org](https://icbad.ffbad.org/instance/GAB38).
-- **Planificateur** (équipes 1 à 6) : affectation des joueurs par week-end, composition des rencontres, contrôles réglementaires (valeurs ICN/ICR, hiérarchie, joueurs brûlés, mutés).
-- **Joueurs** : une fiche par joueur.
+Liens fixes, toujours vers la dernière version :
 
-Le plan du planificateur est enregistré **dans le navigateur** de chacun : il est conservé d'une semaine à l'autre, mais n'est pas partagé. Pour l'échanger entre capitaines : bouton « Exporter le plan », puis « Importer un plan » de l'autre côté.
+- [**statsJoueurs.xlsx**](https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/statsJoueurs.xlsx) — export complet des stats joueurs et club ;
+- [**pointsIC.xlsx**](https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/pointsIC.xlsx) — Valeur IC de tous les joueurs du club (Valeur IC ≥ 24), triée.
 
-L'export Excel complet reste téléchargeable : [**⬇️ statsJoueurs.xlsx**](https://github.com/ClementMirabel/PointsICGAB/releases/download/weekly-data/statsJoueurs.xlsx).
+---
 
-Pour régénérer la page en local sans re-scraper : `python statsJoueurs.py --from-json statsJoueurs.json` (dump produit par chaque run).
+## Pour la maintenance
 
-## Applications (pour lancer un export à la demande)
+### Fonctionnement
 
-Pour générer un export à un autre moment que le jeudi, deux applications autonomes sont aussi disponibles.
+Le workflow [`weekly-export.yml`](.github/workflows/weekly-export.yml) tourne chaque jeudi à 01:00 UTC, et à chaque push sur `main` qui touche le code :
 
-### Télécharger
+1. `pointsIC.py` : roster public du club → `pointsIC.xlsx`.
+2. `statsJoueurs.py` :
+   - roster du club (`roster.py`) et interclubs des équipes 1 à 6 (`icbad.py`, pages publiques) ;
+   - connexion à myffbad (Selenium) et récupération des résultats de la saison, de la cote et de l'historique de classement des joueurs classés R6 ou mieux, puis résultats seuls des autres joueurs d'interclubs (points de cote) ;
+   - calcul des stats (`stats.py`), de l'Excel (`export_excel.py`) et de la page (`export_web.py` + gabarit [`web/statsJoueurs.template.html`](web/statsJoueurs.template.html)) ;
+   - valeurs des joueurs figées pour les week-ends d'interclubs terminés (`historique_ic.py`).
+3. Publication : la page sur **GitHub Pages**, les fichiers Excel dans la release `weekly-data` (remplacée seulement si les deux exports ont réussi).
 
-| Système | Lien | Fichier |
+Données conservées entre deux runs :
+
+| Donnée | Où | Rôle |
 |---|---|---|
-| **Mac** (Apple Silicon M1/M2/M3...) | [⬇️ Télécharger](https://github.com/ClementMirabel/PointsICGAB/releases/latest/download/pointsIC-macos.app.zip) | `pointsIC-macos.app.zip` |
-| **Windows** | [⬇️ Télécharger](https://github.com/ClementMirabel/PointsICGAB/releases/latest/download/pointsIC.exe) | `pointsIC.exe` |
+| `historique_valeurs.json` | branche `donnees` du dépôt | valeurs figées par week-end d'interclubs |
+| `resume.json` | publié avec la page | chiffres clés, comparés par l'export suivant (Aperçu) |
+| `statsJoueurs.json` | artefact du run | dump complet, pour régénérer sans re-scraper |
 
-Pas besoin d'installer Python : ce sont des exécutables autonomes.
+### Prérequis du dépôt
 
-### Installation — Mac
+- Secrets `MYFFBAD_LICENCE` et `MYFFBAD_PASSWORD` (compte myffbad utilisé pour la connexion).
+- Settings → Pages → Source : **GitHub Actions**.
 
-1. Double-clique sur le fichier téléchargé pour le dézipper (tu obtiens `pointsIC.app`). Fais-le glisser dans ton dossier **Applications** si tu veux.
-2. **Débloque l'app (une seule fois)** : l'app n'étant pas signée par un compte développeur Apple (payant), macOS la bloque par défaut. La méthode la plus fiable — le simple clic droit → Ouvrir ne suffit pas toujours ici car l'app contient un programme interne à débloquer aussi :
-   - Ouvre **Terminal** (Cmd+Espace, tape "Terminal").
-   - Tape `xattr -dr com.apple.quarantine ` (avec l'espace à la fin, sans appuyer sur Entrée).
-   - Fais glisser `pointsIC.app` depuis le Finder dans la fenêtre Terminal (ça complète le chemin automatiquement), puis appuie sur Entrée.
-3. Double-clique sur `pointsIC.app`. Une fenêtre Terminal s'ouvre toute seule et affiche la progression (macOS peut demander l'autorisation de "contrôler Terminal" la première fois : accepte).
-
-### Installation — Windows
-
-1. Double-clique sur `pointsIC.exe`.
-2. Windows SmartScreen va probablement afficher *"Windows a protégé votre ordinateur"* (l'exe n'est pas signé par un éditeur reconnu). Clique sur **Informations complémentaires** → **Exécuter quand même**.
-3. Une fenêtre de console s'ouvre et affiche la progression.
-
-### Dans les deux cas
-
-Une fois terminé, le fichier `pointsIC.xlsx` est généré dans le même dossier que l'exécutable.
-
-## Développement
+### En local
 
 ```
 pip install -r requirements.txt
-python pointsIC.py
+python pointsIC.py                       # -> pointsIC.xlsx
+python statsJoueurs.py                   # export complet (~35 min, demande licence et mot de passe myffbad)
+python statsJoueurs.py 06627061 00123456 # juste ces licences (test rapide)
+python statsJoueurs.py --from-json statsJoueurs.json  # régénère Excel + page depuis un dump, sans scraper
+python icbad.py                          # interclubs seuls -> icbad.json
 ```
 
-Un nouveau build Mac + Windows est publié automatiquement (voir [Releases](https://github.com/ClementMirabel/PointsICGAB/releases)) à chaque modification de `pointsIC.py` poussée sur `main`.
+Pour itérer sur la page : récupérer le dump `statsJoueurs.json` (artefact « statsJoueurs-json » d'un run), puis `--from-json`.
