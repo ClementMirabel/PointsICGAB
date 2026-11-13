@@ -1,0 +1,1588 @@
+{
+ "v": 1,
+ "weekends": {
+  "2026-09-19": {
+   "date": "2026-11-13",
+   "joueurs": {
+    "00369893": {
+     "classements": [
+      "N3",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      1967.0,
+      2743.0,
+      3598.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Caroline OUGIER"
+    },
+    "00456533": {
+     "classements": [
+      "N3",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      2566.0,
+      3270.0,
+      3312.0
+     ],
+     "icn": 57,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Guillaume OUGIER"
+    },
+    "06568183": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      1831.0,
+      2200.0,
+      2769.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Julie COTTE"
+    },
+    "06698004": {
+     "classements": [
+      "N2",
+      "N3",
+      "N1"
+     ],
+     "cotes": [
+      2062.0,
+      2140.0,
+      3331.0
+     ],
+     "icn": 57,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Malory DELYS"
+    },
+    "06765747": {
+     "classements": [
+      "N2",
+      "N3",
+      "R5"
+     ],
+     "cotes": [
+      3121.0,
+      2522.0,
+      1900.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Eliot CLOUTIER"
+    },
+    "06826828": {
+     "classements": [
+      "N1",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      3443.0,
+      2724.0,
+      2757.0
+     ],
+     "icn": 66,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Simon COGNET"
+    },
+    "06956436": {
+     "classements": [
+      "N2",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      3106.0,
+      3575.0,
+      3802.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Basile GRILLET"
+    }
+   }
+  },
+  "2026-10-03": {
+   "date": "2026-11-13",
+   "joueurs": {
+    "00017511": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      1986.0,
+      2499.0,
+      3005.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Elodie EYMARD-BRABANT"
+    },
+    "00271623": {
+     "classements": [
+      "R6",
+      "R6",
+      "R4"
+     ],
+     "cotes": [
+      1277.0,
+      1396.0,
+      2101.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Marion CECCATO"
+    },
+    "00369893": {
+     "classements": [
+      "N3",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      1967.0,
+      2743.0,
+      3598.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Caroline OUGIER"
+    },
+    "00456533": {
+     "classements": [
+      "N3",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      2566.0,
+      3270.0,
+      3312.0
+     ],
+     "icn": 57,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Guillaume OUGIER"
+    },
+    "00490547": {
+     "classements": [
+      "R5",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1448.0,
+      1617.0,
+      2374.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Amélie MIQUEAU"
+    },
+    "00503173": {
+     "classements": [
+      "N3",
+      "R6",
+      "R5"
+     ],
+     "cotes": [
+      1839.0,
+      1339.0,
+      1979.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Coline ARIAGNO"
+    },
+    "06471705": {
+     "classements": [
+      "R6",
+      "R4",
+      "R5"
+     ],
+     "cotes": [
+      1604.0,
+      2104.0,
+      1914.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Robin MOLLE"
+    },
+    "06568183": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      1831.0,
+      2200.0,
+      2769.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Julie COTTE"
+    },
+    "06569541": {
+     "classements": [
+      "N2",
+      "N3",
+      "N3"
+     ],
+     "cotes": [
+      2734.0,
+      2714.0,
+      2652.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Kévin JULIEN"
+    },
+    "06585818": {
+     "classements": [
+      "N2",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      3050.0,
+      3698.0,
+      3569.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Martin WIERING"
+    },
+    "06627061": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      2402.0,
+      2648.0,
+      2865.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Julien REMAUD"
+    },
+    "06633042": {
+     "classements": [
+      "N2",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      2866.0,
+      2789.0,
+      2791.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Loïc MORANDEAU"
+    },
+    "06714690": {
+     "classements": [
+      "R5",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1516.0,
+      1516.0,
+      2554.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Mai-phuong NGUYEN"
+    },
+    "06758143": {
+     "classements": [
+      "R4",
+      "R4",
+      "N3"
+     ],
+     "cotes": [
+      2010.0,
+      2217.0,
+      2413.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Teo RAMON"
+    },
+    "06765747": {
+     "classements": [
+      "N2",
+      "N3",
+      "R5"
+     ],
+     "cotes": [
+      3121.0,
+      2522.0,
+      1900.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Eliot CLOUTIER"
+    },
+    "06806558": {
+     "classements": [
+      "R4",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1673.0,
+      1569.0,
+      2583.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Audrey MOREL"
+    },
+    "06821106": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      1900.0,
+      1981.0,
+      3254.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Maïlys POYET"
+    },
+    "06826828": {
+     "classements": [
+      "N1",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      3443.0,
+      2724.0,
+      2757.0
+     ],
+     "icn": 66,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Simon COGNET"
+    },
+    "06826916": {
+     "classements": [
+      "R4",
+      "N3",
+      "R4"
+     ],
+     "cotes": [
+      2165.0,
+      2521.0,
+      2223.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Peio PERRIN"
+    },
+    "06888333": {
+     "classements": [
+      "R5",
+      "R6",
+      "N3"
+     ],
+     "cotes": [
+      1493.0,
+      1397.0,
+      2365.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Célia CARRET"
+    },
+    "06898902": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      2323.0,
+      2808.0,
+      2982.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Ilane AROMATARIO"
+    },
+    "06899848": {
+     "classements": [
+      "N3",
+      "R4",
+      "R4"
+     ],
+     "cotes": [
+      2320.0,
+      2251.0,
+      2163.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Elwenn HOUHA"
+    },
+    "06907703": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      1816.0,
+      2066.0,
+      2942.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Elise DUMONT"
+    },
+    "06910743": {
+     "classements": [
+      "N3",
+      "R6",
+      "R5"
+     ],
+     "cotes": [
+      2330.0,
+      1830.0,
+      1885.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Maxime CHARPENAY"
+    },
+    "06938342": {
+     "classements": [
+      "R5",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1411.0,
+      1572.0,
+      2415.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Camille SERAYET"
+    },
+    "06943069": {
+     "classements": [
+      "R4",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1578.0,
+      1589.0,
+      2575.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Julie MENNESSIEZ"
+    },
+    "06956436": {
+     "classements": [
+      "N2",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      3106.0,
+      3575.0,
+      3802.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Basile GRILLET"
+    },
+    "06985949": {
+     "classements": [
+      "R6",
+      "R6",
+      "R4"
+     ],
+     "cotes": [
+      1342.0,
+      1377.0,
+      2294.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Laure MOUDIO PRISO"
+    },
+    "07016170": {
+     "classements": [
+      "N2",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      2805.0,
+      2879.0,
+      2789.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Louniss ALHALLI"
+    },
+    "07020898": {
+     "classements": [
+      "R5",
+      "R5",
+      "R4"
+     ],
+     "cotes": [
+      1406.0,
+      1550.0,
+      2314.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Faustine VIAL"
+    },
+    "07028467": {
+     "classements": [
+      "R5",
+      "R4",
+      "R4"
+     ],
+     "cotes": [
+      1500.0,
+      1630.0,
+      2159.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Melody DELYS"
+    },
+    "07087244": {
+     "classements": [
+      "D7",
+      "R6",
+      "R5"
+     ],
+     "cotes": [
+      1071.0,
+      1362.0,
+      1911.0
+     ],
+     "icn": 24,
+     "icr": 24,
+     "meilleur_tableau": "R5",
+     "nom": "Léa NICOLAS"
+    },
+    "07149616": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      1900.0,
+      2130.0,
+      2799.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Meryl DESHAYES-MENUT"
+    },
+    "07150146": {
+     "classements": [
+      "N2",
+      "R4",
+      "R5"
+     ],
+     "cotes": [
+      2769.0,
+      2324.0,
+      2012.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Martin BENCHETRIT"
+    },
+    "07194418": {
+     "classements": [
+      "D7",
+      "R5",
+      "D8"
+     ],
+     "cotes": [
+      1468.0,
+      1847.0,
+      1347.0
+     ],
+     "icn": 24,
+     "icr": 24,
+     "meilleur_tableau": "R5",
+     "nom": "Grégoire MUGNIER"
+    },
+    "07207509": {
+     "classements": [
+      "R5",
+      "D7",
+      "D8"
+     ],
+     "cotes": [
+      1407.0,
+      1077.0,
+      1288.0
+     ],
+     "icn": 24,
+     "icr": 24,
+     "meilleur_tableau": "R5",
+     "nom": "Emma HURTAUD"
+    },
+    "07208399": {
+     "classements": [
+      "R5",
+      "R5",
+      "R4"
+     ],
+     "cotes": [
+      1900.0,
+      2050.0,
+      2239.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Yanis CHATEL"
+    },
+    "07226000": {
+     "classements": [
+      "N3",
+      "N3",
+      "N3"
+     ],
+     "cotes": [
+      1919.0,
+      1934.0,
+      2504.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Mélina AUBAS"
+    },
+    "07256053": {
+     "classements": [
+      "N3",
+      "R4",
+      "N3"
+     ],
+     "cotes": [
+      2555.0,
+      2255.0,
+      2464.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Titouan BIGILLON"
+    },
+    "07280345": {
+     "classements": [
+      "N3",
+      "R5",
+      "R5"
+     ],
+     "cotes": [
+      2644.0,
+      1976.0,
+      1900.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Paulo VON SCALA"
+    },
+    "07322812": {
+     "classements": [
+      "R4",
+      "R6",
+      "R6"
+     ],
+     "cotes": [
+      2085.0,
+      1783.0,
+      1654.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Robin TIBERGHIEN"
+    },
+    "07327365": {
+     "classements": [
+      "R5",
+      "R4",
+      "R4"
+     ],
+     "cotes": [
+      1968.0,
+      2203.0,
+      2195.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Pierre-charles PALLIN"
+    },
+    "07362396": {
+     "classements": [
+      "D8",
+      "D7",
+      "D7"
+     ],
+     "cotes": [
+      876.0,
+      1158.0,
+      1566.0
+     ],
+     "icn": 12,
+     "icr": 12,
+     "meilleur_tableau": "D7",
+     "nom": "Marion VINCENSINI"
+    },
+    "07380974": {
+     "classements": [
+      "R6",
+      "R6",
+      "R4"
+     ],
+     "cotes": [
+      1258.0,
+      1334.0,
+      2133.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Agathe MOUNIER"
+    },
+    "07658183": {
+     "classements": [
+      "D9",
+      "D9",
+      "D9"
+     ],
+     "cotes": [
+      964.0,
+      1124.0,
+      980.0
+     ],
+     "icn": 6,
+     "icr": 6,
+     "meilleur_tableau": "D9",
+     "nom": "Thibaut TEZENAS DU MONTCEL"
+    }
+   }
+  },
+  "2026-11-07": {
+   "date": "2026-11-13",
+   "joueurs": {
+    "00017511": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      1986.0,
+      2499.0,
+      3005.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Elodie EYMARD-BRABANT"
+    },
+    "00271623": {
+     "classements": [
+      "R6",
+      "R6",
+      "R4"
+     ],
+     "cotes": [
+      1277.0,
+      1396.0,
+      2101.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Marion CECCATO"
+    },
+    "00369893": {
+     "classements": [
+      "N3",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      1967.0,
+      2743.0,
+      3598.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Caroline OUGIER"
+    },
+    "00425341": {
+     "classements": [
+      "R6",
+      "D7",
+      "D8"
+     ],
+     "cotes": [
+      1703.0,
+      1468.0,
+      1368.0
+     ],
+     "icn": 18,
+     "icr": 18,
+     "meilleur_tableau": "R6",
+     "nom": "Tom CHANUSSOT"
+    },
+    "00456533": {
+     "classements": [
+      "N3",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      2566.0,
+      3270.0,
+      3312.0
+     ],
+     "icn": 57,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Guillaume OUGIER"
+    },
+    "00490547": {
+     "classements": [
+      "R5",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1448.0,
+      1617.0,
+      2374.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Amélie MIQUEAU"
+    },
+    "00524612": {
+     "classements": [
+      "R4",
+      "R4",
+      "R5"
+     ],
+     "cotes": [
+      2039.0,
+      2096.0,
+      2015.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Clément MIRABEL"
+    },
+    "06471705": {
+     "classements": [
+      "R6",
+      "R4",
+      "R5"
+     ],
+     "cotes": [
+      1604.0,
+      2104.0,
+      1914.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Robin MOLLE"
+    },
+    "06568183": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      1831.0,
+      2200.0,
+      2769.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Julie COTTE"
+    },
+    "06569541": {
+     "classements": [
+      "N2",
+      "N3",
+      "N3"
+     ],
+     "cotes": [
+      2734.0,
+      2714.0,
+      2652.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Kévin JULIEN"
+    },
+    "06585818": {
+     "classements": [
+      "N2",
+      "N1",
+      "N1"
+     ],
+     "cotes": [
+      3050.0,
+      3698.0,
+      3569.0
+     ],
+     "icn": 75,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Martin WIERING"
+    },
+    "06627061": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      2402.0,
+      2648.0,
+      2865.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Julien REMAUD"
+    },
+    "06687311": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      2487.0,
+      2853.0,
+      3028.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Antoine TARAMASCO"
+    },
+    "06698004": {
+     "classements": [
+      "N2",
+      "N3",
+      "N1"
+     ],
+     "cotes": [
+      2062.0,
+      2140.0,
+      3331.0
+     ],
+     "icn": 57,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Malory DELYS"
+    },
+    "06714690": {
+     "classements": [
+      "R5",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1516.0,
+      1516.0,
+      2554.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Mai-phuong NGUYEN"
+    },
+    "06765747": {
+     "classements": [
+      "N2",
+      "N3",
+      "R5"
+     ],
+     "cotes": [
+      3121.0,
+      2522.0,
+      1900.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Eliot CLOUTIER"
+    },
+    "06821106": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      1900.0,
+      1981.0,
+      3254.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Maïlys POYET"
+    },
+    "06826828": {
+     "classements": [
+      "N1",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      3443.0,
+      2724.0,
+      2757.0
+     ],
+     "icn": 66,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Simon COGNET"
+    },
+    "06826916": {
+     "classements": [
+      "R4",
+      "N3",
+      "R4"
+     ],
+     "cotes": [
+      2165.0,
+      2521.0,
+      2223.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Peio PERRIN"
+    },
+    "06888333": {
+     "classements": [
+      "R5",
+      "R6",
+      "N3"
+     ],
+     "cotes": [
+      1493.0,
+      1397.0,
+      2365.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Célia CARRET"
+    },
+    "06888657": {
+     "classements": [
+      "N3",
+      "N2",
+      "N1"
+     ],
+     "cotes": [
+      2004.0,
+      2534.0,
+      3296.0
+     ],
+     "icn": 57,
+     "icr": 57,
+     "meilleur_tableau": "N1",
+     "nom": "Pauline GUEDJ"
+    },
+    "06898902": {
+     "classements": [
+      "N3",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      2323.0,
+      2808.0,
+      2982.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Ilane AROMATARIO"
+    },
+    "06907703": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      1816.0,
+      2066.0,
+      2942.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Elise DUMONT"
+    },
+    "06910743": {
+     "classements": [
+      "N3",
+      "R6",
+      "R5"
+     ],
+     "cotes": [
+      2330.0,
+      1830.0,
+      1885.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Maxime CHARPENAY"
+    },
+    "06938342": {
+     "classements": [
+      "R5",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1411.0,
+      1572.0,
+      2415.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Camille SERAYET"
+    },
+    "06943069": {
+     "classements": [
+      "R4",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1578.0,
+      1589.0,
+      2575.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Julie MENNESSIEZ"
+    },
+    "06985949": {
+     "classements": [
+      "R6",
+      "R6",
+      "R4"
+     ],
+     "cotes": [
+      1342.0,
+      1377.0,
+      2294.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Laure MOUDIO PRISO"
+    },
+    "07016170": {
+     "classements": [
+      "N2",
+      "N2",
+      "N2"
+     ],
+     "cotes": [
+      2805.0,
+      2879.0,
+      2789.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Louniss ALHALLI"
+    },
+    "07020898": {
+     "classements": [
+      "R5",
+      "R5",
+      "R4"
+     ],
+     "cotes": [
+      1406.0,
+      1550.0,
+      2314.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Faustine VIAL"
+    },
+    "07028467": {
+     "classements": [
+      "R5",
+      "R4",
+      "R4"
+     ],
+     "cotes": [
+      1500.0,
+      1630.0,
+      2159.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Melody DELYS"
+    },
+    "07084745": {
+     "classements": [
+      "R4",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1607.0,
+      1546.0,
+      2595.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Lucile LAGUILHOMIE"
+    },
+    "07087244": {
+     "classements": [
+      "D7",
+      "R6",
+      "R5"
+     ],
+     "cotes": [
+      1071.0,
+      1362.0,
+      1911.0
+     ],
+     "icn": 24,
+     "icr": 24,
+     "meilleur_tableau": "R5",
+     "nom": "Léa NICOLAS"
+    },
+    "07105231": {
+     "classements": [
+      "N3",
+      "R4",
+      "R5"
+     ],
+     "cotes": [
+      2476.0,
+      2113.0,
+      1900.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Mael MUTEL"
+    },
+    "07149616": {
+     "classements": [
+      "N3",
+      "N3",
+      "N2"
+     ],
+     "cotes": [
+      1900.0,
+      2130.0,
+      2799.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Meryl DESHAYES-MENUT"
+    },
+    "07150146": {
+     "classements": [
+      "N2",
+      "R4",
+      "R5"
+     ],
+     "cotes": [
+      2769.0,
+      2324.0,
+      2012.0
+     ],
+     "icn": 48,
+     "icr": 48,
+     "meilleur_tableau": "N2",
+     "nom": "Martin BENCHETRIT"
+    },
+    "07194418": {
+     "classements": [
+      "D7",
+      "R5",
+      "D8"
+     ],
+     "cotes": [
+      1468.0,
+      1847.0,
+      1347.0
+     ],
+     "icn": 24,
+     "icr": 24,
+     "meilleur_tableau": "R5",
+     "nom": "Grégoire MUGNIER"
+    },
+    "07207509": {
+     "classements": [
+      "R5",
+      "D7",
+      "D8"
+     ],
+     "cotes": [
+      1407.0,
+      1077.0,
+      1288.0
+     ],
+     "icn": 24,
+     "icr": 24,
+     "meilleur_tableau": "R5",
+     "nom": "Emma HURTAUD"
+    },
+    "07208399": {
+     "classements": [
+      "R5",
+      "R5",
+      "R4"
+     ],
+     "cotes": [
+      1900.0,
+      2050.0,
+      2239.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Yanis CHATEL"
+    },
+    "07226000": {
+     "classements": [
+      "N3",
+      "N3",
+      "N3"
+     ],
+     "cotes": [
+      1919.0,
+      1934.0,
+      2504.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Mélina AUBAS"
+    },
+    "07256053": {
+     "classements": [
+      "N3",
+      "R4",
+      "N3"
+     ],
+     "cotes": [
+      2555.0,
+      2255.0,
+      2464.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Titouan BIGILLON"
+    },
+    "07272546": {
+     "classements": [
+      "R4",
+      "R5",
+      "N3"
+     ],
+     "cotes": [
+      1594.0,
+      1594.0,
+      2659.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Ayumi GODARD-SAEKI"
+    },
+    "07280345": {
+     "classements": [
+      "N3",
+      "R5",
+      "R5"
+     ],
+     "cotes": [
+      2644.0,
+      1976.0,
+      1900.0
+     ],
+     "icn": 39,
+     "icr": 39,
+     "meilleur_tableau": "N3",
+     "nom": "Paulo VON SCALA"
+    },
+    "07322812": {
+     "classements": [
+      "R4",
+      "R6",
+      "R6"
+     ],
+     "cotes": [
+      2085.0,
+      1783.0,
+      1654.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Robin TIBERGHIEN"
+    },
+    "07327365": {
+     "classements": [
+      "R5",
+      "R4",
+      "R4"
+     ],
+     "cotes": [
+      1968.0,
+      2203.0,
+      2195.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Pierre-charles PALLIN"
+    },
+    "07362396": {
+     "classements": [
+      "D8",
+      "D7",
+      "D7"
+     ],
+     "cotes": [
+      876.0,
+      1158.0,
+      1566.0
+     ],
+     "icn": 12,
+     "icr": 12,
+     "meilleur_tableau": "D7",
+     "nom": "Marion VINCENSINI"
+    },
+    "07380974": {
+     "classements": [
+      "R6",
+      "R6",
+      "R4"
+     ],
+     "cotes": [
+      1258.0,
+      1334.0,
+      2133.0
+     ],
+     "icn": 30,
+     "icr": 30,
+     "meilleur_tableau": "R4",
+     "nom": "Agathe MOUNIER"
+    }
+   }
+  }
+ }
+}
