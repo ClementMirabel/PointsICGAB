@@ -1843,10 +1843,11 @@ if (IC) for (const e of IC.equipes) for (const r of e.rencontres) {
 /* Mouvements entre équipes (joueurs "brûlés"), selon la division de l'équipe
    dans laquelle on veut faire descendre le joueur :
    - équipe RÉGIONALE (PN, R1, R2, R3) - règlement ICR AURA 2026-2027, art. 12 :
-     autorisé tant que le joueur n'a pas disputé, avec des équipes du club
-     classées plus haut, plus de 4 rencontres régionales ni plus de 3
-     rencontres nationales ; 4 au total s'il a joué dans les deux ; 3 au total
-     pour une équipe de R3. Une rencontre = un affrontement (2 par dimanche en
+     bloqué dès 3 rencontres nationales ou 4 régionales jouées avec des
+     équipes du club classées plus haut ; dès 4 au total s'il a joué dans les
+     deux ; dès 3 au total pour une équipe de R3. Le chiffre de l'article est
+     le seuil atteint (malgré "pas plus de") : l'ancienne version l'illustrait
+     par "limite de trois rencontres au total (2 en nationaux, 1 en régionaux)". Une rencontre = un affrontement (2 par dimanche en
      régional, 1 par samedi en N2), comptée dès qu'il y a joué un match ;
    - équipe DÉPARTEMENTALE (PR, D1 à D4) - règlement CD38 2026-2027, art. 8 :
      interdit dès 2 journées jouées dans des équipes classées plus haut (une
@@ -1907,10 +1908,13 @@ function motifInterdit(c, m) {
     const icn = somme(sup.filter(n => niveauDivision(DIV_EQUIPE.get(n)) === "national"), "r");
     const icr = somme(sup.filter(n => niveauDivision(DIV_EQUIPE.get(n)) === "regional"), "r");
     const tot = icn + icr;
-    if (div === "R3") return tot > 3 ? `${tot} rencontres en équipes supérieures (ICR art. 12 : 3 maximum pour une équipe de R3)` : null;
-    if (icn && icr) return tot > 4 ? `${tot} rencontres nationales et régionales en équipes supérieures (ICR art. 12 : 4 maximum au total)` : null;
-    if (icr > 4) return `${icr} rencontres régionales en équipes supérieures (ICR art. 12 : 4 maximum)`;
-    if (icn > 3) return `${icn} rencontres nationales en équipe supérieure (ICR art. 12 : 3 maximum)`;
+    // seuils = nombre de rencontres à partir duquel le joueur est brûlé
+    // (lecture confirmée par l'ancienne version de l'art. 12 : "limite de
+    // trois rencontres au total (2 en nationaux, 1 en régionaux...)")
+    if (div === "R3") return tot >= 3 ? `${tot} rencontres en équipes supérieures (ICR art. 12 : bloqué dès 3 pour une équipe de R3)` : null;
+    if (icn && icr) return tot >= 4 ? `${tot} rencontres nationales et régionales en équipes supérieures (ICR art. 12 : bloqué dès 4 au total)` : null;
+    if (icr >= 4) return `${icr} rencontres régionales en équipes supérieures (ICR art. 12 : bloqué dès 4)`;
+    if (icn >= 3) return `${icn} rencontres nationales en équipe supérieure (ICR art. 12 : bloqué dès 3)`;
     return null;
   }
   const jours = somme(sup, "j");
