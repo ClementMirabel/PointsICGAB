@@ -82,6 +82,7 @@ jobs:
           path: |
             statsJoueurs.xlsx
             statsJoueurs.html
+            statsJoueurs_resume.json
 
       # dump complet (cache pour --from-json), gardé en artefact du run
       # seulement - pas publié dans la release
@@ -120,6 +121,8 @@ jobs:
         run: |
           mkdir -p site
           cp export/statsJoueurs.html site/index.html
+          # chiffres clés de cet export : l'export suivant les compare (Aperçu)
+          cp export/statsJoueurs_resume.json site/resume.json || true
           touch site/.nojekyll
 
       - uses: actions/configure-pages@v5

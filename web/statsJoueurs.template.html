@@ -207,6 +207,19 @@ select.sel-alerte { border-color: var(--bad) !important; color: var(--bad-text);
 abbr.mute { text-decoration: none; display: inline-block; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 4px; border-radius: 3px;
   background: #ec835a; color: #0b0b0b; vertical-align: 1px; cursor: help; }
 .mute-trop { color: var(--bad-text); font-weight: 700; }
+.evol { font-size: 12px; margin-top: 4px; font-weight: 600; }
+.set-marque { background: rgba(250,178,25,.35); border-radius: 3px; padding: 0 3px; }
+.carte-tournoi h3 { margin: 0 0 8px; font-size: 14px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.carte-tournoi .mt { display: grid; grid-template-columns: auto auto 1fr auto auto; gap: 6px; align-items: center; font-size: 12.5px; padding: 4px 0; border-top: 1px solid var(--grid); }
+.carte-tournoi .mt .sc { white-space: nowrap; color: var(--ink-2); }
+.pic { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; padding: 3px 0; font-size: 13px; }
+.pic-genre { font-size: 11.5px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: .04em; }
+details.riv { border-top: 1px solid var(--grid); padding: 6px 0; }
+details.riv:first-child { border-top: 0; }
+details.riv summary { cursor: pointer; display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+details.riv .riv-b { text-align: left; } details.riv .riv-a { text-align: right; }
+details.riv .gagne { font-weight: 650; }
+@media (max-width: 640px) { details.riv summary { grid-template-columns: 1fr auto 1fr; } details.riv summary > .small { grid-column: 1 / -1; } }
 .drop.survol { outline: 2px dashed var(--s); outline-offset: 2px; }
 .poignee { cursor: grab; color: var(--muted); user-select: none; }
 .chk { font-size: 13px; padding: 3px 0; }
@@ -317,7 +330,7 @@ function route() {
   $("#tabPlan").classList.toggle("on", plan);
   $(".wrap").classList.toggle("noside", club || ic || plan);
   if (plan) { $("#list").style.display = "none"; const [, a, b] = h.split("/"); renderPlan(a, b); return; }
-  if (club) { $("#list").style.display = "none"; renderClub(h.split("/")[1]); return; }
+  if (club) { $("#list").style.display = "none"; const [, sous, ...reste] = h.split("/"); renderClub(sous, reste); return; }
   if (ic) { $("#list").style.display = "none"; renderIC(h.split("/")[1]); return; }
   $("#list").style.display = "";
   let lic = h.split("/")[1];
@@ -833,21 +846,49 @@ const catLabel = c => CAT_LABEL[c] || c;
 const catRowClass = r => r.categorie === "Club (tous tableaux)" ? "total" : ["H (tous tableaux)", "S (unisexe)"].includes(r.categorie) ? "sep" : "";
 Object.assign(state, { clubOnglet: "Overall", overallSexe: "tous", profilTableau: "Tous", catMois: "Club (tous tableaux)" });
 
-function renderClub(sous) {
-  if (!SOUS_PAGES.some(([k]) => k === sous)) sous = "apercu";
+function renderClub(sous, reste = []) {
+  // pages de détail rattachées à une sous-page (onglet surligné)
+  const parent = { detail: "categories", tournoi: "competitions" }[sous];
+  if (!parent && !SOUS_PAGES.some(([k]) => k === sous)) sous = "apercu";
+  const actif = parent || sous;
   $("#main").innerHTML = `<nav class="chips subnav">${SOUS_PAGES.map(([k, l]) =>
-    `<a class="chip ${k === sous ? "on" : ""}" href="#club/${k}" ${k === sous ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav><div id="club"></div>`;
+    `<a class="chip ${k === actif ? "on" : ""}" href="#club/${k}" ${k === actif ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav><div id="club"></div>`;
+  if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1]);
+  if (sous === "tournoi") return clubTournoi($("#club"), reste[0]);
   ({ apercu: clubApercu, classement: clubClassement, competitions: clubCompetitions,
      categories: clubCategories, profil: clubProfil, records: clubRecords })[sous]($("#club"));
 }
 
-function matchsClub() {
-  return DATA.joueurs.flatMap(j => j.matchs.filter(m => !m.intra_club).map(m => ({ ...m, sexe: j.sexe })));
+/* matchs du club comptés UNE fois chacun (un double à deux joueurs du club
+   apparaît dans les deux fiches), matchs internes exclus - même règle que
+   export_web.matchs_club_uniques ; représentant = premier joueur par nom */
+let _matchsUniques = null;
+function matchsClubUniques() {
+  if (_matchsUniques) return _matchsUniques;
+  const vus = new Map();
+  for (const j of DATA.joueurs) for (const m of j.matchs) {
+    if (m.intra_club) continue;
+    const cle = [m.date, m.evenement, m.tableau, [...m.adversaires].sort().join("|"), m.score].join("#");
+    if (!vus.has(cle)) vus.set(cle, { ...m, sexes: new Set(), joueursClub: [] });
+    const x = vus.get(cle); x.sexes.add(j.sexe); x.joueursClub.push(j);
+  }
+  return (_matchsUniques = [...vus.values()]);
 }
+/* catégories club d'un match (même règle que export_web._categories_match) */
+function categoriesMatch(tableau, sexes) {
+  const c = ["Club (tous tableaux)"];
+  for (const g of ["H", "F"]) if (sexes.has(g)) c.push(`${g} (tous tableaux)`);
+  if (tableau === "Mixte") c.push("MX");
+  else { for (const g of ["H", "F"]) if (sexes.has(g)) c.push(tableau[0] + (g === "F" ? "D" : "H")); c.push(`${tableau[0]} (unisexe)`); }
+  return c;
+}
+const setsDe = score => String(score || "").split(" / ").filter(Boolean).map(x => x.split("-").map(Number));
+const joueursMatch = m => m.joueursClub.map(j => `<a href="#joueur/${j.licence}">${esc(j.nom)}</a>`).join(" / ")
+  + (m.partenaire && !m.joueursClub.some(j => j.nom === m.partenaire) ? ` <span class="muted">/ ${esc(m.partenaire)}</span>` : "");
 
 /* -- Aperçu */
 function clubApercu(el) {
-  const tous = matchsClub();
+  const tous = matchsClubUniques();
   const mois = [...new Set(tous.map(m => m.date.slice(0, 7)))].sort();
   const parMois = T.map(t => ({ key: t, label: t, color: TC[t],
     values: mois.map(mo => tous.filter(m => m.tableau === t && m.date.startsWith(mo)).length) }));
@@ -858,14 +899,20 @@ function clubApercu(el) {
   const prog = DATA.joueurs.filter(j => j.global.matchs > 0 && j.global.diff_cote != null)
     .sort((a, b) => b.global.diff_cote - a.global.diff_cote);
   const sel = prog.length > 20 ? [...prog.slice(0, 10), ...prog.slice(-10)] : prog;
+  const rencIC = IC ? IC.equipes.reduce((a, e) => a + e.rencontres.filter(r => r.jouee).length, 0) : null;
+  // écarts avec l'export précédent (résumé publié la semaine d'avant)
+  const P = DATA.precedent;
+  const ecart = (v, ancien, nd = 0, unite = "") => P && ancien != null && v != null
+    ? `<div class="evol ${deltaCls(v - ancien)}">${signed(v - ancien, nd)}${unite} <span class="muted">depuis le ${esc(String(P.genere_le).split(" ")[0])}</span></div>` : "";
 
   el.innerHTML = `
     <div class="grid g4">
-      <div class="card stat"><div class="v num">${actifs}</div><div class="l">joueurs ayant joué (sur ${DATA.joueurs.length})</div></div>
-      <div class="card stat"><div class="v num">${fmt(tous.length)}</div><div class="l">matchs (hors matchs internes)</div></div>
-      <div class="card stat"><div class="v num">${pct(taux(tous))}</div><div class="l">de victoires · ${pct(taux(tous.filter(m => m.interclub)))} en interclubs</div></div>
-      <div class="card stat"><div class="v num">${DATA.club.tournois.length}</div><div class="l">tournois individuels avec au moins un joueur du club</div></div>
+      <div class="card stat"><div class="v num">${actifs}</div><div class="l">joueurs ayant joué (sur ${DATA.joueurs.length})</div>${ecart(actifs, P?.joueurs_actifs)}</div>
+      <div class="card stat"><div class="v num">${fmt(tous.length)}</div><div class="l">matchs (chacun compté une fois, hors matchs internes)</div>${ecart(tous.length, P?.matchs)}</div>
+      <div class="card stat"><div class="v num">${pct(taux(tous))}</div><div class="l">de victoires</div>${ecart(taux(tous), P?.pct, 1, " pts")}</div>
+      <div class="card stat"><div class="v num">${DATA.club.tournois.length}</div><div class="l">tournois individuels${rencIC != null ? ` · ${rencIC} rencontres d'interclubs` : ""}</div>${ecart(DATA.club.tournois.length, P?.tournois)}</div>
     </div>
+    ${P ? "" : `<p class="hint" style="margin-top:8px">Les écarts avec l'export précédent apparaîtront à partir de la prochaine mise à jour.</p>`}
     <section><h2>Matchs par mois</h2>
       <p class="hint">Survoler une barre pour le détail et le % de victoire du mois.</p>
       <div class="card"><div class="legend">${T.map(t => `<span><i class="box" style="background:${TC[t]}"></i>${t}</span>`).join("")}</div>
@@ -877,6 +924,142 @@ function clubApercu(el) {
     tipExtra: i => `<div class="r"><span>% victoire</span><b class="num">${pct(vic[i])}</b></div>` });
   divergingBars($("#cProg"), sel.map(j => ({ label: j.nom, value: j.global.diff_cote,
     color: j.global.diff_cote >= 0 ? "var(--good)" : "var(--bad)", href: "#joueur/" + j.licence })));
+}
+
+/* courbe simple sur des catégories (mois) : une série, points survolables -
+   alignée sous un histogramme de mêmes catégories (pas de double échelle) */
+function lineCats(el, cats, values, { height = 150, yFmt = v => pct(v), y0 = 0, y1 = 100, color = "var(--club)", catFmt = c => c } = {}) {
+  const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 10, t: 10, b: 26 };
+  const bw = (W - m.l - m.r) / cats.length;
+  const X = i => m.l + bw * i + bw / 2, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * (H - m.t - m.b);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img">`;
+  for (const v of [0, 25, 50, 75, 100]) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/>
+    <text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" class="num">${v} %</text>`;
+  const pts = values.map((v, i) => v == null ? null : [X(i), Y(v), v]).filter(Boolean);
+  if (pts.length > 1) svg += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join("")}" fill="none" stroke="${color}" stroke-width="2"/>`;
+  pts.forEach((p, i) => { svg += `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${color}" stroke="var(--surface)" stroke-width="2"><title>${yFmt(p[2])}</title></circle>`; });
+  const last = pts[pts.length - 1];
+  if (last) svg += `<text x="${last[0]}" y="${last[1] - 9}" text-anchor="middle" class="lbl num">${yFmt(last[2])}</text>`;
+  cats.forEach((c, i) => { svg += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${esc(catFmt(c))}</text>`; });
+  el.innerHTML = svg + "</svg>";
+}
+
+/* -- listes détaillées derrière les chiffres de Stats club */
+const DETAILS = {
+  clutch: { titre: "Sets serrés", hint: "Sets terminés à 2 points d'écart ou moins (tous les matchs, un set par ligne)." },
+  outsider: { titre: "Matchs en outsider", hint: "L'adversaire avait une meilleure cote que le joueur du club. Forfaits exclus." },
+  favori: { titre: "Matchs en favori", hint: "Le joueur du club avait la meilleure cote. Forfaits exclus." },
+  propre: { titre: "Victoires : propres ou accrochées", hint: "Victoires (au moins 2 sets, forfaits exclus) : propre = sans perdre de set." },
+  apres1: { titre: "Matchs après avoir gagné le 1er set", hint: "Au moins 2 sets, forfaits exclus : le joueur a-t-il conclu ?" },
+  comeback: { titre: "Matchs après avoir perdu le 1er set", hint: "Au moins 2 sets, forfaits exclus : le joueur est-il revenu ?" },
+};
+const lienDetail = (type, cat, contenu) => `<a href="#club/detail/${type}/${encodeURIComponent(cat)}" title="Voir la liste">${contenu}</a>`;
+
+function clubDetail(el, type, catEnc) {
+  const cat = decodeURIComponent(catEnc || ""), def = DETAILS[type];
+  if (!def) { el.innerHTML = `<div class="card empty">Liste inconnue.</div>`; return; }
+  const ms = matchsClubUniques().filter(m => categoriesMatch(m.tableau, m.sexes).includes(cat)).sort((a, b) => b.date.localeCompare(a.date));
+  const utiles = ms.filter(m => setsDe(m.score).length >= 2 && !m.forfait);
+  let lignes = [], resume = "";
+  const ligneMatch = (m, extra = "", marque = null) => `<tr><td class="num" style="white-space:nowrap">${fDate(m.date)}</td>
+    <td><span class="tagsw"><i style="background:${TC[m.tableau]}"></i>${TL[m.tableau]}</span></td>
+    <td>${joueursMatch(m)}</td><td>${m.adversaires.map(esc).join(" / ")}</td>
+    <td class="num" style="white-space:nowrap">${setsDe(m.score).map((st, i) => i === marque ? `<b class="set-marque">${st.join("-")}</b>` : st.join("-")).join(" / ")}</td>
+    ${extra}<td><span class="res ${m.victoire ? "v" : "d"}">${m.victoire ? "V" : "D"}</span></td></tr>`;
+  let entete = `<th>Date</th><th></th><th>GAB</th><th>Adversaire(s)</th><th>Score</th>`;
+  if (type === "clutch") {
+    for (const m of ms) setsDe(m.score).forEach((st, i) => { if (Math.abs(st[0] - st[1]) <= 2) lignes.push({ m, i, gagne: st[0] > st[1] }); });
+    const g = lignes.filter(x => x.gagne).length;
+    resume = `${lignes.length} sets serrés · ${g} gagnés (${pct(lignes.length ? g / lignes.length * 100 : null)})`;
+    entete += `<th>Set</th><th>Match</th>`;
+    lignes = lignes.map(({ m, i, gagne }) => ligneMatch(m, `<td><span class="res ${gagne ? "v" : "d"}" title="Set ${gagne ? "gagné" : "perdu"}">${gagne ? "V" : "D"}</span></td>`, i));
+  } else if (type === "outsider" || type === "favori") {
+    const sel = ms.filter(m => m.ma_cote != null && m.cote_adverse != null && !m.forfait && (type === "outsider" ? m.cote_adverse > m.ma_cote : m.ma_cote > m.cote_adverse));
+    const g = sel.filter(m => m.victoire).length;
+    resume = `${sel.length} matchs · ${g} gagnés (${pct(sel.length ? g / sel.length * 100 : null)})`;
+    entete += `<th class="r">Cote GAB</th><th class="r">Cote adv.</th>`;
+    lignes = sel.map(m => ligneMatch(m, `<td class="r num">${fmt(m.ma_cote)}</td><td class="r num">${fmt(m.cote_adverse)}</td>`));
+  } else {
+    const premierGagne = m => { const s0 = setsDe(m.score)[0]; return s0[0] > s0[1]; };
+    const sel = type === "propre" ? utiles.filter(m => m.victoire) : utiles.filter(m => type === "apres1" ? premierGagne(m) : !premierGagne(m));
+    const ok = type === "propre" ? sel.filter(m => setsDe(m.score).every(st => st[0] > st[1])).length : sel.filter(m => m.victoire).length;
+    resume = `${sel.length} matchs · ${type === "propre" ? `${ok} sans perdre de set` : `${ok} gagnés`} (${pct(sel.length ? ok / sel.length * 100 : null)})`;
+    if (type === "propre") { entete += `<th>Type</th>`; lignes = sel.map(m => ligneMatch(m, `<td>${setsDe(m.score).every(st => st[0] > st[1]) ? "propre" : '<span class="muted">en 3 sets</span>'}</td>`)); }
+    else lignes = sel.map(m => ligneMatch(m, "", 0));
+  }
+  el.innerHTML = `<div class="chips subnav"><a class="chip" href="#club/categories">← Stats club</a></div>
+    <div class="card" style="margin-bottom:14px"><h2 style="margin:0;font-size:17px">${def.titre} · ${esc(catLabel(cat))}</h2>
+      <p class="hint" style="margin:4px 0 0">${def.hint} ${resume}. Chaque match n'est compté qu'une fois, matchs internes exclus.</p></div>
+    <div class="card scroll">${lignes.length ? `<table class="t"><thead><tr>${entete}<th></th></tr></thead><tbody>${lignes.join("")}</tbody></table>` : `<div class="empty">Aucun match.</div>`}</div>`;
+}
+
+/* -- page d'un tournoi : matchs des joueurs du club, une carte par joueur */
+const lienTournoi = (t, contenu) => `<a href="#club/tournoi/${DATA.club.tournois.indexOf(t)}" title="Matchs du tournoi">${contenu}</a>`;
+function clubTournoi(el, idx) {
+  const t = DATA.club.tournois[+idx];
+  if (!t) { el.innerHTML = `<div class="card empty">Tournoi introuvable.</div>`; return; }
+  const dates = new Set(t.dates || [t.date]);
+  const parJoueur = DATA.joueurs.map(j => ({ j, ms: j.matchs.filter(m => !m.interclub && m.evenement === t.nom && dates.has(m.date))
+    .sort((a, b) => a.date.localeCompare(b.date)) })).filter(x => x.ms.length)
+    .sort((a, b) => b.ms.filter(m => m.victoire).length - a.ms.filter(m => m.victoire).length || a.j.nom.localeCompare(b.j.nom));
+  const cartes = parJoueur.map(({ j, ms }) => {
+    const v = ms.filter(m => m.victoire).length, pts = ms.reduce((a, m) => a + (m.points || 0), 0);
+    return `<div class="card carte-tournoi"><h3><a href="#joueur/${j.licence}">${esc(j.nom)}</a>
+        <span class="muted small" style="margin-left:auto">${v} V – ${ms.length - v} D · <span class="${deltaCls(pts)}">${signed(pts)} pts</span></span></h3>
+      ${ms.map(m => `<div class="mt"><span class="res ${m.victoire ? "v" : "d"}">${m.victoire ? "V" : "D"}</span>
+        <span class="tagsw"><i style="background:${TC[m.tableau]}"></i>${TL[m.tableau]}</span>
+        <span class="adv">${m.partenaire ? `<span class="muted">avec ${esc(m.partenaire)} · </span>` : ""}${m.adversaires.map(esc).join(" / ")}${m.intra_club ? ' <span class="tag">interne</span>' : ""}${m.forfait ? ' <span class="tag">forfait</span>' : ""}</span>
+        <span class="num sc">${esc(m.score)}</span><span class="num ${deltaCls(m.points)}">${m.points == null ? "" : signed(m.points)}</span></div>`).join("")}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="chips subnav"><a class="chip" href="#club/competitions">← Compétitions</a></div>
+    <div class="card hero"><div class="who"><h2>${esc(t.nom)}</h2>
+      <div class="small muted" style="margin-top:6px">${[...dates].sort().map(fDate).join(", ")}</div></div>
+      <div class="stat"><div class="v num">${t.joueurs}</div><div class="l">joueurs du club</div></div>
+      <div class="stat"><div class="v num">${t.victoires}/${t.matchs}</div><div class="l">matchs gagnés · ${pct(t.pct)}</div></div>
+      <div class="stat"><div class="v num ${deltaCls(t.points)}">${signed(t.points)}</div><div class="l">points de cote du club</div></div></div>
+    <section><h2>Matchs par joueur</h2><p class="hint">Bilan global hors matchs internes ; les matchs entre joueurs du club apparaissent sur les deux cartes.</p>
+      <div class="grid g3">${cartes || `<div class="empty">Aucun match trouvé.</div>`}</div></section>`;
+}
+
+/* -- Records */
+function clubRecords(el) {
+  const elig = DATA.club.tournois.filter(t => t.joueurs >= 5);
+  const best = elig.length ? elig.reduce((a, b) => b.pct > a.pct ? b : a) : null;
+  const worst = elig.length ? elig.reduce((a, b) => b.pct < a.pct ? b : a) : null;
+  const carteT = (titre, t) => `<div class="card fact"><span class="k">${titre}</span>${t
+    ? `<span class="t">${lienTournoi(t, esc(t.nom))}</span><span class="s num">${fDate(t.date)} · ${t.joueurs} joueurs · ${t.victoires}/${t.matchs} matchs gagnés · <b>${pct(t.pct)}</b></span>
+       <span class="s num">Points de cote du club sur le tournoi : <b class="${deltaCls(t.points)}">${signed(t.points)}</b></span>`
+    : `<span class="s">Aucun tournoi avec au moins 5 joueurs du club.</span>`}</div>`;
+  // pics / chutes : une carte par tableau, une ligne par genre
+  const pic = (t, sexe, type) => DATA.club.pics_mensuels.find(p => p.tableau === t && p.sexe === sexe && p.type === type);
+  const lignePic = p => p ? `<div class="pic"><span class="${p.type === "Pic" ? "delta-up" : "delta-down"}" aria-hidden="true">${p.type === "Pic" ? "▲" : "▼"}</span>
+      <span>${lienNom(p.nom)} <span class="muted small">${fMois(p.mois)}</span></span><b class="num ${deltaCls(p.delta)}">${signed(p.delta)}</b></div>` : `<div class="pic muted small">–</div>`;
+  const cartesPics = T.map(t => `<div class="card"><h3 style="margin:0 0 8px;font-size:14px;display:flex;gap:8px;align-items:center"><span class="sw" style="width:10px;height:10px;border-radius:3px;background:${TC[t]}"></span>${t}</h3>
+      ${["H", "F"].map(sx => `<div class="pic-genre">${sx === "H" ? "Hommes" : "Femmes"}</div>${lignePic(pic(t, sx, "Pic"))}${lignePic(pic(t, sx, "Chute"))}`).join("")}</div>`).join("");
+  el.innerHTML = `
+    <section style="margin-top:8px"><h2>Tournoi le plus / le moins victorieux</h2>
+      <p class="hint">Parmi les tournois avec au moins 5 joueurs du club engagés. Cliquer le nom pour les matchs du tournoi.</p>
+      <div class="grid g2">${carteT("Le plus victorieux", best)}${carteT("Le moins victorieux", worst)}</div></section>
+    <section><h2>Plus gros pics et chutes de cote sur un mois</h2>
+      <p class="hint">Pour chaque tableau et chaque genre : ▲ le joueur qui a gagné le plus de points de cote sur un seul mois, ▼ celui qui en a perdu le plus.</p>
+      <div class="grid g3">${cartesPics}</div></section>
+    <section><h2>Rivalités internes</h2>
+      <p class="hint">Matchs entre joueurs du club (tournois). En double et mixte : paire contre paire. « Tous » : joueur contre joueur, toutes disciplines confondues. Cliquer une rivalité pour ses matchs.</p>
+      <div class="chips" id="rivT" style="margin-bottom:10px"></div><div id="rivListe"></div></section>`;
+  const riv = DATA.club.rivalites || {};
+  const draw = () => {
+    const t = state.rivTableau || "Tous";
+    $("#rivT").innerHTML = ["Tous", ...T].map(x => `<button class="chip" data-t="${x}" aria-pressed="${x === t}">${x !== "Tous" ? `<span class="sw" style="background:${TC[x]}"></span>` : ""}${x}${riv[x] ? ` <span class="muted">${riv[x].length}</span>` : ""}</button>`).join("");
+    const liste = Array.isArray(riv) ? (t === "Simple" ? riv.map(r => ({ a: r.joueur_a, b: r.joueur_b, total: r.total, va: r.victoires_a, vb: r.victoires_b, matchs: [] })) : []) : (riv[t] || []);
+    const noms = x => x.split(" / ").map(lienNom).join(" / ");
+    $("#rivListe").innerHTML = liste.length ? `<div class="card">${liste.map(r => `<details class="riv"><summary>
+        <span class="riv-a ${r.va > r.vb ? "gagne" : ""}">${noms(r.a)}</span><b class="num">${r.va} – ${r.vb}</b><span class="riv-b ${r.vb > r.va ? "gagne" : ""}">${noms(r.b)}</span>
+        <span class="muted small">${r.total} confrontation${r.total > 1 ? "s" : ""}</span></summary>
+        ${(r.matchs || []).map(m => `<div class="small" style="padding:3px 0 3px 18px">${fDate(m.date)} · <span class="tagsw"><i style="background:${TC[m.tableau]}"></i>${TL[m.tableau]}</span> ${esc(m.evenement)} · victoire ${esc(m.gagnant)} <span class="num muted">${esc(m.score)}</span></div>`).join("")}</details>`).join("")}</div>`
+      : `<div class="card empty">Aucune confrontation interne ${t === "Tous" ? "" : "en " + t.toLowerCase()} cette saison.</div>`;
+  };
+  $("#rivT").onclick = e => { const b = e.target.closest("[data-t]"); if (!b) return; state.rivTableau = b.dataset.t; draw(); };
+  draw();
 }
 
 /* -- Classement de forme (Overall + un onglet par tableau) */
@@ -939,7 +1122,7 @@ function drawClassement() {
     ];
   }
   cols.push(...forme.map(([k, l, title], i) => ({ k, label: l, title, val: r => r.x[k], num: true, sm: i > 0,
-    html: i === 0 ? (r => `<b>${fmt(r.x[k])}</b>`) : null })));
+    html: r => r.x[k] == null ? "–" : `<span class="vs" style="background:rgba(42,120,214,${(r.x[k] / 100 * 0.42).toFixed(3)})">${i === 0 ? `<b>${fmt(r.x[k])}</b>` : fmt(r.x[k])}</span>` })));
   sortableTable($("#classement"), "classement", cols, rows, { defaut: { cle: "forme", sens: -1 }, rang: true,
     rowClass: r => r.x.matchs < PEU_DE_MATCHS ? "few" : "", lien: r => "#joueur/" + r.j.licence });
   const prog = rows.filter(r => r.x.diff_cote != null).sort((a, b) => b.x.diff_cote - a.x.diff_cote);
@@ -1001,7 +1184,7 @@ function clubCompetitions(el) {
       <button class="chip" data-tous="1" aria-pressed="${tous}">Tous (${DATA.club.tournois.length})</button>`;
     sortableTable($("#tTournois"), "tournoisClub", [
       { k: "date", label: "Date", val: r => r.date, html: r => fDate(r.date) },
-      { k: "nom", label: "Tournoi", val: r => r.nom },
+      { k: "nom", label: "Tournoi", val: r => r.nom, html: r => lienTournoi(r, esc(r.nom)) },
       { k: "joueurs", label: "Joueurs", val: r => r.joueurs, num: true },
       { k: "matchs", label: "Matchs", val: r => r.matchs, num: true, sm: true },
       { k: "pct", label: "% vict.", val: r => r.pct, html: r => pct(r.pct), num: true },
@@ -1025,20 +1208,30 @@ function clubCategories(el) {
     <section style="margin-top:8px"><h2>% de victoire : total vs interclubs</h2>
       <div class="card"><div class="legend"><span><i class="box" style="background:var(--club)"></i>Tous les matchs</span><span><i class="box" style="background:var(--ic)"></i>Interclubs</span></div>
       <div class="chart" id="cIC"></div></div></section>
-    <section><h2>Interclubs par équipe</h2><p class="hint">Matchs d'interclub de chaque équipe du club (matchs internes exclus). Pts/match : points de cote gagnés ou perdus par match.</p><div class="card scroll" id="tEquipes"></div></section>
-    <section><h2>Résultats</h2><p class="hint">Diff interclub = % en interclubs − % sur tous les matchs.</p><div class="card scroll" id="tRes"></div></section>
+    <section><h2>Interclubs par équipe</h2><p class="hint">D'après les feuilles de rencontre icbad : chaque match de chaque rencontre, compté une fois (8 matchs par rencontre en régional et national).</p><div class="card scroll" id="tEquipes"></div></section>
+    <section><h2>Résultats</h2><p class="hint">Matchs : chaque match du club compté une fois (un double à deux joueurs du club ne compte pas double). Colonnes IC : feuilles de rencontre icbad des équipes 1 à ${IC?.equipes_planificateur || 6}. Diff interclub = % en interclubs − % sur tous les matchs.</p><div class="card scroll" id="tRes"></div></section>
     <section><h2>Points de cote moyens</h2><p class="hint">Gagnés par victoire, perdus par défaite. Diff = interclub − total : l'interclub rapporte-t-il / coûte-t-il plus qu'ailleurs ?</p><div class="card scroll" id="tPts"></div></section>
-    <section><h2>Dynamique de match</h2><p class="hint">Matchs d'au moins 2 sets, forfaits exclus. Propre : victoires sans perdre un set. Après 1er set gagné : capacité à conclure. Comeback : victoires après avoir perdu le 1er set.</p><div class="card scroll" id="tDyn"></div></section>
+    <p class="hint" style="margin-top:22px">Dans les tableaux ci-dessous, cliquer un chiffre pour la liste des matchs (ou des sets) concernés.</p>
+    <section style="margin-top:8px"><h2>Dynamique de match</h2><p class="hint">Matchs d'au moins 2 sets, forfaits exclus. Propre : victoires sans perdre un set. Après 1er set gagné : capacité à conclure. Comeback : victoires après avoir perdu le 1er set.</p><div class="card scroll" id="tDyn"></div></section>
     <section><h2>David contre Goliath</h2><p class="hint">Outsider : l'adversaire avait une meilleure cote. Favori : c'est nous. Forfaits exclus.</p><div class="card scroll" id="tDvg"></div></section>
     <section><h2>Sets serrés</h2><p class="hint">Sets terminés à 2 points d'écart ou moins. Diff = % sets serrés gagnés − % de tous les sets gagnés.</p><div class="card scroll" id="tClutch"></div></section>
-    <section><h2>Par mois</h2><div class="chips" id="catMois" style="margin-bottom:10px"></div><div class="card scroll" id="tMois"></div></section>`;
-  const equipes = parEquipe(matchsClub()).map(([n, ms]) => ({ n, b: bilan(ms), joueurs: new Set(DATA.joueurs.filter(j => j.matchs.some(m => m.interclub && m.equipe === n)).map(j => j.licence)).size }));
+    <section><h2>Par mois</h2><div class="chips" id="catMois" style="margin-bottom:10px"></div>
+      <div class="card" style="margin-bottom:12px"><div class="legend"><span><i class="box" style="background:var(--good)"></i>Victoires</span><span><i class="box" style="background:var(--bad)"></i>Défaites</span></div>
+        <div class="chart" id="cMoisVD"></div><div class="small muted" style="margin:10px 0 2px">% de victoire</div><div class="chart" id="cMoisPct"></div></div>
+      <div class="card scroll" id="tMois"></div></section>`;
+  const equipes = (IC?.equipes || []).map(e => {
+    const ms = icMatchs(e), lics = new Set(ms.flatMap(m => m.club.map(p => p.licence)).filter(Boolean));
+    const pts = [...lics].reduce((a, l) => a + (ptsCote(l, e.numero) || 0), 0);
+    return { n: e.numero, division: e.division, rencontres: icRencontresJouees(e).length, joueurs: lics.size, b: vj(ms), pts };
+  });
   sortableTable($("#tEquipes"), "equipes", [
     { k: "n", label: "Équipe", val: r => r.n, html: r => `<a class="eq" href="#ic/${r.n}">Équipe ${r.n}</a>` },
+    { k: "div", label: "Division", val: r => r.division },
+    { k: "renc", label: "Rencontres", val: r => r.rencontres, num: true },
     { k: "joueurs", label: "Joueurs", val: r => r.joueurs, num: true },
-    { k: "matchs", label: "Matchs", val: r => r.b.n, num: true },
+    { k: "matchs", label: "Matchs", val: r => r.b.j, num: true },
     { k: "pct", label: "% vict.", val: r => r.b.pct, html: r => pct(r.b.pct), num: true },
-    { k: "ppm", label: "Pts/match", val: r => r.b.ppm, html: r => `<span class="${deltaCls(r.b.ppm)}">${signed(r.b.ppm, 1)}</span>`, num: true },
+    { k: "pts", label: "Pts cote", val: r => r.pts, html: r => `<span class="${deltaCls(r.pts)}">${signed(r.pts)}</span>`, num: true, title: "Total des points de cote gagnés/perdus en interclubs par les joueurs de l'équipe" },
   ], equipes, { defaut: { cle: "n", sens: 1 }, lien: r => "#ic/" + r.n });
   pairedBars($("#cIC"), cats.map(r => ({ label: catLabel(r.categorie), a: r.pct, b: r.pct_ic })),
     [{ label: "Tous les matchs", color: "var(--club)" }, { label: "Interclubs", color: "var(--ic)" }]);
@@ -1054,20 +1247,28 @@ function clubCategories(el) {
     { k: "dg", label: "Diff gagnés", val: r => diff(r.pts_gagnes_ic, r.pts_gagnes), html: r => sgn(diff(r.pts_gagnes_ic, r.pts_gagnes)), num: true },
     { k: "dp", label: "Diff perdus", val: r => diff(r.pts_perdus_ic, r.pts_perdus), html: r => sgn(diff(r.pts_perdus_ic, r.pts_perdus)), num: true },
   ]), cats, { ...opt, defaut: { cle: "categorie", sens: 1 } });
-  sortableTable($("#tDyn"), "catDyn", avecOrdre([pc("propre", "Propre"), pc("apres_1er_set", "Après 1er set gagné"), pc("comeback", "Comeback")]),
+  const pcLien = (k, label, type) => pc(k, label, { html: r => r[k] == null ? "–" : lienDetail(type, r.categorie, pct(r[k])) });
+  sortableTable($("#tDyn"), "catDyn", avecOrdre([pcLien("propre", "Propre", "propre"), pcLien("apres_1er_set", "Après 1er set gagné", "apres1"), pcLien("comeback", "Comeback", "comeback")]),
     cats, { ...opt, defaut: { cle: "categorie", sens: 1 } });
   sortableTable($("#tDvg"), "catDvg", avecOrdre([
-    { ...c("outsider"), label: "% en outsider", html: r => tauxV(r.outsider, r.outsider_matchs) },
-    { ...c("favori"), label: "% en favori", html: r => tauxV(r.favori, r.favori_matchs) },
+    { ...c("outsider"), label: "% en outsider", html: r => r.outsider_matchs ? lienDetail("outsider", r.categorie, tauxV(r.outsider, r.outsider_matchs)) : "–" },
+    { ...c("favori"), label: "% en favori", html: r => r.favori_matchs ? lienDetail("favori", r.categorie, tauxV(r.favori, r.favori_matchs)) : "–" },
   ]), cats, { ...opt, defaut: { cle: "categorie", sens: 1 } });
   sortableTable($("#tClutch"), "catClutch", avecOrdre([
-    { ...c("sets_serres"), label: "Sets serrés" }, pc("clutch", "% gagnés"),
+    { ...c("sets_serres"), label: "Sets serrés", html: r => r.sets_serres ? lienDetail("clutch", r.categorie, fmt(r.sets_serres)) : "0" },
+    pc("clutch", "% gagnés", { html: r => r.clutch == null ? "–" : lienDetail("clutch", r.categorie, pct(r.clutch)) }),
     { ...c("delta_clutch"), label: "Diff", html: r => sgn(r.delta_clutch) },
   ]), cats, { ...opt, defaut: { cle: "categorie", sens: 1 } });
   const drawMois = () => {
     $("#catMois").innerHTML = cats.map(r => `<button class="chip" data-c="${esc(r.categorie)}" aria-pressed="${state.catMois === r.categorie}">${esc(catLabel(r.categorie))}</button>`).join("");
     const cat = cats.find(r => r.categorie === state.catMois) || cats[cats.length - 1];
     const rows = Object.entries(cat.par_mois).map(([mois, b]) => ({ mois, ...b }));
+    const moisL = rows.map(r => r.mois);
+    stackedBars($("#cMoisVD"), moisL, [
+      { key: "v", label: "Victoires", color: "var(--good)", values: rows.map(r => r.victoires) },
+      { key: "d", label: "Défaites", color: "var(--bad)", values: rows.map(r => r.joues - r.victoires) }],
+      { height: 200, catFmt: fMois, tipExtra: i => `<div class="r"><span>% victoire</span><b class="num">${pct(rows[i].pct)}</b></div>` });
+    lineCats($("#cMoisPct"), moisL, rows.map(r => r.pct), { catFmt: fMois });
     sortableTable($("#tMois"), "catMoisT", [
       { k: "mois", label: "Mois", val: r => r.mois, html: r => fMois(r.mois) },
       { k: "joues", label: "Matchs", val: r => r.joues, num: true },
@@ -1123,41 +1324,6 @@ function clubProfil(el) {
   };
   $("#profilT").onclick = e => { const b = e.target.closest("[data-t]"); if (!b) return; state.profilTableau = b.dataset.t; draw(); };
   draw();
-}
-
-/* -- Records */
-function clubRecords(el) {
-  const elig = DATA.club.tournois.filter(t => t.joueurs >= 5);
-  const best = elig.length ? elig.reduce((a, b) => b.pct > a.pct ? b : a) : null;
-  const worst = elig.length ? elig.reduce((a, b) => b.pct < a.pct ? b : a) : null;
-  const carteT = (titre, t) => `<div class="card fact"><span class="k">${titre}</span>${t
-    ? `<span class="t">${esc(t.nom)}</span><span class="s num">${fDate(t.date)} · ${t.joueurs} joueurs · ${t.victoires}/${t.matchs} matchs gagnés · <b>${pct(t.pct)}</b></span>
-       <span class="s num">Points de cote du club sur le tournoi : <b class="${deltaCls(t.points)}">${signed(t.points)}</b></span>`
-    : `<span class="s">Aucun tournoi avec au moins 5 joueurs du club.</span>`}</div>`;
-  el.innerHTML = `
-    <section style="margin-top:8px"><h2>Tournoi le plus / le moins victorieux</h2>
-      <p class="hint">Parmi les tournois avec au moins 5 joueurs du club engagés.</p>
-      <div class="grid g2">${carteT("Le plus victorieux", best)}${carteT("Le moins victorieux", worst)}</div></section>
-    <section><h2>Plus gros pics et chutes de cote sur un mois</h2>
-      <p class="hint">Par tableau et par genre : qui a gagné (pic) ou perdu (chute) le plus de points de cote sur un seul mois.</p>
-      <div class="card scroll" id="tPics"></div></section>
-    <section><h2>Rivalités internes (simple)</h2>
-      <p class="hint">Matchs de simple en tournoi entre deux joueurs du club.</p>
-      <div class="card scroll" id="tRiv"></div></section>`;
-  sortableTable($("#tPics"), "pics", [
-    { k: "tableau", label: "Tableau", val: r => T.indexOf(r.tableau), html: r => `<span class="tagsw"><i style="background:${TC[r.tableau]}"></i>${r.tableau}</span>` },
-    { k: "sexe", label: "Genre", val: r => r.sexe === "H" ? "Hommes" : "Femmes" },
-    { k: "type", label: "", val: r => r.type, html: r => `<span class="${r.type === "Pic" ? "delta-up" : "delta-down"}">${r.type === "Pic" ? "▲ Pic" : "▼ Chute"}</span>` },
-    { k: "nom", label: "Joueur", val: r => r.nom, html: r => lienNom(r.nom) },
-    { k: "mois", label: "Mois", val: r => r.mois, html: r => fMois(r.mois) },
-    { k: "delta", label: "Δ cote", val: r => r.delta, html: r => `<span class="${deltaCls(r.delta)}">${signed(r.delta)}</span>`, num: true },
-  ], DATA.club.pics_mensuels, { defaut: { cle: "tableau", sens: 1 } });
-  sortableTable($("#tRiv"), "riv", [
-    { k: "a", label: "Joueur A", val: r => r.joueur_a, html: r => lienNom(r.joueur_a) },
-    { k: "b", label: "Joueur B", val: r => r.joueur_b, html: r => lienNom(r.joueur_b) },
-    { k: "total", label: "Confrontations", val: r => r.total, num: true },
-    { k: "score", label: "Bilan A – B", val: r => r.victoires_a - r.victoires_b, html: r => `${r.victoires_a} – ${r.victoires_b}`, num: true },
-  ], DATA.club.rivalites, { defaut: { cle: "total", sens: -1 } });
 }
 
 /* ---------- page Interclubs (données icbad.ffbad.org) */
@@ -1829,7 +1995,17 @@ function controlesValeurs(w, valeurs) {
 
 function planWeekend(el, w, wes) {
   const jour = n => [...new Set(w.items.filter(x => x.e.numero === n).map(x => fJour(x.r.date)))].join(", ");
-  const entete = navWeekends(w, wes);
+  const entete = navWeekends(w, wes) + `<div class="chips" style="margin:-6px 0 12px">
+      ${!w.passe && w.n > 1 ? `<button class="chip" id="planCopier">⧉ Copier les effectifs du week-end ${w.n - 1}</button>` : ""}
+      <button class="chip" id="planExcel">⬇ Export Excel (format INTERCLUBS)</button>
+      <span id="planMsg" class="small muted" style="align-self:center"></span></div>`;
+  const brancherActions = apres => {
+    const msg = t => { const m = el.querySelector("#planMsg"); if (m) m.textContent = t; };
+    el.querySelector("#planExcel").onclick = () => { msg("Génération du fichier…");
+      exporterWeekendExcel(w).then(() => msg("Fichier Excel téléchargé.")).catch(err => msg("Export impossible : " + err.message)); };
+    const cp = el.querySelector("#planCopier");
+    if (cp) cp.onclick = () => { const r = copierWeekendPrecedent(w, wes); if (r) { apres(); msg(r); } };
+  };
   if (w.passe) {
     const valeurs = {};
     const cartes = w.equipes.map(n => {
@@ -1843,6 +2019,7 @@ function planWeekend(el, w, wes) {
     }).join("");
     el.innerHTML = entete + `<p class="hint">Week-end passé : joueurs ayant joué au moins un match, d'après les feuilles de rencontre icbad. Valeurs calculées avec les classements actuels.</p>
       <div class="grid plan-grid" style="--cols:${colsPlan(w.equipes.length)}">${cartes}</div><div style="margin-top:12px">${controlesValeurs(w, valeurs)}</div>`;
+    brancherActions(() => {});
     return;
   }
   const aff = affectationsDe(w.samedi);
@@ -1856,6 +2033,9 @@ function planWeekend(el, w, wes) {
         <input id="planQ" type="search" placeholder="Rechercher…" value="${esc(state.planFiltre.q)}" style="padding:5px 10px;border:1px solid var(--grid);border-radius:999px;background:var(--surface)">
         ${[["tous", "Tous"], ["H", "Hommes"], ["F", "Femmes"]].map(([k, l]) => `<button class="chip" data-sx="${k}" aria-pressed="${state.planFiltre.sexe === k}">${l}</button>`).join("")}
         <button class="chip" data-ic="1" aria-pressed="${state.planFiltre.ic}">Joueurs d'interclubs seulement</button>
+        <select id="planElig" class="chip" title="Masquer les joueurs que le règlement interdit dans cette équipe (ICR art. 12, CD38 art. 8)">
+          <option value="">Éligibles : toutes équipes</option>
+          ${w.equipes.map(n => `<option value="${n}" ${+state.planFiltre.elig === n ? "selected" : ""}>Éligibles en équipe ${n}</option>`).join("")}</select>
       </div>
       <div class="card scroll drop" data-equipe="0" id="planPool"></div></section>`;
 
@@ -1893,7 +2073,8 @@ function planWeekend(el, w, wes) {
     const f = state.planFiltre, q = normNom(f.q);
     const pool = (f.ic ? EFF.filter(p => licencesIC.has(p.licence)) : EFF)
       .concat([...licencesIC].filter(l => !effParLic.has(l)).map(joueurPlan).filter(Boolean))
-      .filter(p => (f.sexe === "tous" || p.sexe === f.sexe) && (!q || normNom(p.nom).includes(q)));
+      .filter(p => (f.sexe === "tous" || p.sexe === f.sexe) && (!q || normNom(p.nom).includes(q))
+        && (!f.elig || !w.equipes.includes(+f.elig) || !statutBrulage(p.licence, w, wes, +f.elig).bloque));
     sortableTable($("#planPool"), "planPool", [
       { k: "nom", label: "Joueur", val: r => r.nom, html: r => `<span draggable="true" data-lic="${r.licence}" class="poignee" title="Glisser vers une équipe">⠿</span> ${lienJoueurIC(r.licence, r.nom)}${badgeMute(estMute(r.licence))}` },
       { k: "sexe", label: "", val: r => r.sexe, sm: true },
@@ -1914,13 +2095,15 @@ function planWeekend(el, w, wes) {
   dessiner();
 
   // interactions : sélecteur, retrait, glisser-déposer, filtres
-  el.addEventListener("change", ev => { const s = ev.target.closest("[data-affecter]"); if (s) affecter(s.dataset.affecter, +s.value || 0); });
+  el.addEventListener("change", ev => { const s = ev.target.closest("select[data-affecter]"); if (s) affecter(s.dataset.affecter, +s.value || 0); });
   el.addEventListener("click", ev => {
     const x = ev.target.closest("[data-retirer]"); if (x) return affecter(x.dataset.retirer, 0);
     const sx = ev.target.closest("[data-sx]"); if (sx) { state.planFiltre.sexe = sx.dataset.sx; el.querySelectorAll("[data-sx]").forEach(b => b.setAttribute("aria-pressed", b === sx)); dessiner(); }
     const ic = ev.target.closest("[data-ic]"); if (ic) { state.planFiltre.ic = !state.planFiltre.ic; ic.setAttribute("aria-pressed", state.planFiltre.ic); dessiner(); }
   });
   $("#planQ").addEventListener("input", ev => { state.planFiltre.q = ev.target.value; dessiner(); });
+  $("#planElig").addEventListener("change", ev => { state.planFiltre.elig = ev.target.value; dessiner(); });
+  brancherActions(dessiner);
   el.addEventListener("dragstart", ev => { const d = ev.target.closest("[data-lic]"); if (d) { ev.dataTransfer.setData("text/plain", d.dataset.lic); ev.dataTransfer.effectAllowed = "move"; } });
   el.addEventListener("dragover", ev => { const z = ev.target.closest(".drop"); if (z) { ev.preventDefault(); z.classList.add("survol"); } });
   el.addEventListener("dragleave", ev => { const z = ev.target.closest(".drop"); if (z && !z.contains(ev.relatedTarget)) z.classList.remove("survol"); });
@@ -1929,6 +2112,133 @@ function planWeekend(el, w, wes) {
     ev.preventDefault(); z.classList.remove("survol");
     const lic = ev.dataTransfer.getData("text/plain"); if (lic) affecter(lic, +z.dataset.equipe || 0);
   });
+}
+
+/* ---- export Excel d'un week-end, au format du classeur "INTERCLUBS"
+   (onglet de journée : blocs "Proposition d'équipe" hommes / femmes, avec
+   classements, points et valeur de l'équipe ; onglet Compositions : match
+   par match, par équipe). ExcelJS chargé à la demande (page hébergée). */
+let _excelJS = null;
+function chargerExcelJS() {
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  return _excelJS || (_excelJS = new Promise((ok, ko) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+    sc.onload = () => ok(window.ExcelJS);
+    sc.onerror = () => { _excelJS = null; ko(new Error("chargement de la librairie Excel impossible (connexion ?)")); };
+    document.head.appendChild(sc);
+  }));
+}
+/* "Simon COGNET" -> nom "COGNET", prénom "Simon" */
+function decouperNom(nom) {
+  const mots = String(nom || "").trim().split(/\s+/);
+  const estNom = m => m.length > 1 && m === m.toUpperCase() && /[A-Z]/.test(m);
+  const nomF = mots.filter(estNom), prenom = mots.filter(m => !estNom(m));
+  return { nom: (nomF.length ? nomF : mots.slice(-1)).join(" "), prenom: prenom.join(" ") };
+}
+const capitaliser = x => x.toLowerCase().replace(/(^|[\s-])\S/g, c => c.toUpperCase());
+const nomFeuille = nom => { const d = decouperNom(nom); return `${capitaliser(d.nom)} ${d.prenom}`.trim(); };      // "Cognet Simon"
+const nomCompoSimple = nom => { const d = decouperNom(nom); return `${d.nom} ${d.prenom}`.toUpperCase().trim(); };  // "COGNET SIMON"
+const COULEUR_DIVISION = { N1: "FFFCE5CD", N2: "FFFCE5CD", N3: "FFFFF2CC", PN: "FFFFF2CC", R1: "FFD9EAD3", R2: "FFC9DAF8", R3: "FFEAD1DC", PR: "FFD9D2E9" };
+
+/* joueurs d'une équipe pour le week-end : réels si passé, sinon le plan */
+const joueursWeekend = (w, n) => w.passe ? participantsReels(w, n) : joueursAffectes(w.samedi, n);
+/* composition d'une rencontre : feuille réelle si jouée, sinon le plan -> {code: [noms]} */
+function compositionRencontre(e, r) {
+  if (r.jouee) return Object.fromEntries(r.matchs.map(m => [m.code, m.club.map(p => p.nom)]));
+  const compo = PLAN.compos[r.id] || {};
+  return Object.fromEntries(formatEquipe(e).map(c => [c, (compo[c] || []).filter(Boolean).map(l => (joueurPlan(l) || {}).nom || l)]));
+}
+
+async function exporterWeekendExcel(w) {
+  const ExcelJS = await chargerExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Stats joueurs GAB38";
+  const gras = { bold: true }, bord = { style: "thin", color: { argb: "FFBFBFBF" } };
+  const cadre = { top: bord, left: bord, bottom: bord, right: bord };
+  const remplir = (cell, argb) => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb } }; };
+  const centre = { horizontal: "center", vertical: "middle", wrapText: true };
+
+  // --- onglet de la journée : proposition d'équipe + valeur
+  const ws = wb.addWorksheet(`J${w.n}`);
+  ws.columns = [{ width: 26 }, { width: 26 }, { width: 16 }, { width: 18 }, { width: 13 }, { width: 13 }, { width: 9 }, { width: 9 }];
+  ws.mergeCells("A1:D1"); ws.mergeCells("E1:H1");
+  ws.getCell("A1").value = `PROPOSITION D'ÉQUIPE · week-end ${w.n} (${d2(w.samedi).getDate()}-${fDate(w.dimanche)})`;
+  ws.getCell("E1").value = "VALEUR DE L'ÉQUIPE";
+  for (const [c, f] of [["A1", "FFC9DAF8"], ["E1", "FFFFF2CC"]]) { const x = ws.getCell(c); x.font = gras; x.alignment = centre; remplir(x, f); }
+  let ligne = 2;
+  for (const n of w.equipes) {
+    const e = IC.equipes.find(x => x.numero === n);
+    const ps = joueursWeekend(w, n).slice().sort((a, b) => valeurPour(b, n) - valeurPour(a, n));
+    const H = ps.filter(p => p.sexe === "H"), F = ps.filter(p => p.sexe === "F");
+    const adv = w.items.filter(x => x.e.numero === n).map(x => x.r.adversaire).join(" · ");
+    ws.mergeCells(ligne, 1, ligne, 2); ws.mergeCells(ligne, 5, ligne, 6); ws.mergeCells(ligne, 7, ligne, 8);
+    const ent = [[1, `${e.division} - Équipe ${n}`], [3, "ABSENT(S)"], [4, "REMPLAÇANT(S)"], [5, "CLASSEMENTS"], [7, `POINTS ${echelle(n)}`]];
+    for (const [col, v] of ent) { const x = ws.getCell(ligne, col); x.value = v; x.font = gras; x.alignment = centre; remplir(x, COULEUR_DIVISION[e.division] || "FFEFEFEF"); }
+    ws.getCell(ligne, 1).note = adv ? `Contre : ${adv}` : undefined;
+    const nb = Math.max(H.length, F.length, 4);
+    for (let i = 0; i < nb; i++) {
+      const r = ligne + 1 + i, h = H[i], f = F[i];
+      ws.getCell(r, 1).value = h ? nomFeuille(h.nom) + (estMute(h.licence) ? " (M)" : "") : null;
+      ws.getCell(r, 2).value = f ? nomFeuille(f.nom) + (estMute(f.licence) ? " (M)" : "") : null;
+      ws.getCell(r, 5).value = h ? (h.classements || []).join("/") : null;
+      ws.getCell(r, 6).value = f ? (f.classements || []).join("/") : null;
+      ws.getCell(r, 7).value = h ? valeurPour(h, n) : null;
+      ws.getCell(r, 8).value = f ? valeurPour(f, n) : null;
+      for (let c = 1; c <= 8; c++) ws.getCell(r, c).border = cadre;
+    }
+    const tot = ligne + 1 + nb;
+    ws.mergeCells(tot, 5, tot, 6); ws.mergeCells(tot, 7, tot, 8);
+    ws.getCell(tot, 5).value = "Valeur (3 H + 3 F)"; ws.getCell(tot, 5).font = { italic: true, size: 9 };
+    ws.getCell(tot, 7).value = valeurEquipe(ps, n); ws.getCell(tot, 7).font = gras; ws.getCell(tot, 7).alignment = centre;
+    ligne = tot + 2;
+  }
+  ws.getCell(ligne, 1).value = "Valeurs : ICN pour l'équipe 1, ICR (N1 = 57) pour les autres ; valeur d'équipe = 3 meilleurs joueurs + 3 meilleures joueuses (règlement ICR AURA art. 5). (M) = muté.";
+  ws.getCell(ligne, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
+
+  // --- onglet Compositions : une paire de colonnes par rencontre
+  const wc = wb.addWorksheet("Compositions");
+  let col = 1;
+  for (const { e, r } of w.items) {
+    const compo = compositionRencontre(e, r), codes = r.jouee ? r.matchs.map(m => m.code) : formatEquipe(e);
+    const couleur = COULEUR_DIVISION[e.division] || "FFEFEFEF";
+    wc.getColumn(col).width = 7; wc.getColumn(col + 1).width = 34;
+    wc.mergeCells(1, col, 1, col + 1); wc.mergeCells(2, col, 2, col + 1);
+    const t1 = wc.getCell(1, col); t1.value = `Équipe ${e.numero} · ${e.division}`; t1.font = gras; t1.alignment = centre; remplir(t1, couleur);
+    const t2 = wc.getCell(2, col); t2.value = `${r.domicile ? "vs" : "@"} ${r.adversaire} · ${r.date ? fDate(r.date) : ""} ${r.heure || ""}${r.jouee ? ` · ${r.score_club}-${r.score_adv}` : ""}`;
+    t2.font = { size: 9 }; t2.alignment = centre;
+    // libellés du classeur : "SH 1", "DM 2"... numéro omis quand le match est unique dans son type ("DH", "DD")
+    const multiples = new Set(codes.filter(c => slotNum(c) > 1).map(slotType));
+    codes.forEach((code, i) => {
+      const a = wc.getCell(3 + i, col), b = wc.getCell(3 + i, col + 1), noms = compo[code] || [];
+      const t = slotType(code);
+      a.value = `${t === "MX" ? "DM" : t}${multiples.has(t) ? ` ${slotNum(code)}` : ""}`; a.font = gras; remplir(a, couleur);
+      b.value = noms.length > 1 ? noms.map(x => decouperNom(x).nom.toUpperCase()).join(" - ") : noms.length ? nomCompoSimple(noms[0]) : null;
+      remplir(b, couleur); a.border = cadre; b.border = cadre;
+    });
+    col += 3;
+  }
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  a.download = `Interclubs ${DATA.saison} - week-end ${w.n} (${w.samedi}).xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* copie des effectifs du week-end précédent vers w (équipes communes aux deux) */
+function copierWeekendPrecedent(w, wes) {
+  const src = wes[w.n - 2];
+  if (!src) return "Pas de week-end précédent.";
+  const aff = affectationsDe(w.samedi), communes = w.equipes.filter(n => src.equipes.includes(n));
+  if (!communes.length) return `Aucune équipe ne joue les deux week-ends (${src.n} et ${w.n}).`;
+  if (Object.keys(aff).length && !confirm(`Remplacer les affectations de ce week-end par les effectifs du week-end ${src.n} (équipes ${communes.join(", ")}) ?`)) return null;
+  for (const lic of Object.keys(aff)) delete aff[lic];
+  let nb = 0;
+  for (const n of communes) for (const p of joueursWeekend(src, n)) if (!aff[p.licence]) { aff[p.licence] = n; nb++; }
+  planSauver();
+  const absentes = w.equipes.filter(n => !communes.includes(n));
+  return `${nb} joueur(s) copié(s) depuis le week-end ${src.n}${src.passe ? " (joueurs ayant réellement joué)" : " (plan)"}${absentes.length ? ` ; équipe(s) ${absentes.join(", ")} absente(s) du week-end ${src.n} : à compléter` : ""}.`;
 }
 
 /* ---- rencontre : match par match */

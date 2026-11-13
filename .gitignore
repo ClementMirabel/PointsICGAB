@@ -7,5 +7,6 @@ statsJoueurs.xlsx
 statsJoueurs.html
 statsJoueurs.json
 icbad.json
+statsJoueurs_resume.json
 ~$*.xlsx
 debug/
