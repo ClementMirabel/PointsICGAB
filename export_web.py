@@ -8,6 +8,7 @@ régénère Excel + HTML sans re-scraper (voir charger_stats_json).
 Le gabarit est web/statsJoueurs.template.html ; les données y sont
 injectées à la place de DATA_PLACEHOLDER."""
 import json
+import math
 import os
 import re
 
@@ -529,6 +530,67 @@ def _interclubs_payload(interclubs, all_stats):
             "points_cote": {lic: {eq: _r(v) for eq, v in par_eq.items()} for lic, par_eq in points.items()}}
 
 
+def _logistique(points, iterations=30, l2=1e-3):
+    """Régression logistique à une variable (Newton) : [(x, y)] -> (a, b)
+    pour P(y=1) = 1 / (1 + exp(-(a + b x))). Légère régularisation : stable
+    même si les classes sont presque séparées."""
+    a = b = 0.0
+    for _ in range(iterations):
+        ga, gb = -l2 * a, -l2 * b
+        haa, hab, hbb = l2, 0.0, l2
+        for x, y in points:
+            z = max(-30.0, min(30.0, a + b * x))
+            p = 1 / (1 + math.exp(-z))
+            w = p * (1 - p)
+            ga += y - p
+            gb += (y - p) * x
+            haa += w
+            hab += w * x
+            hbb += w * x * x
+        det = haa * hbb - hab * hab
+        if det <= 0:
+            break
+        da, db = (hbb * ga - hab * gb) / det, (haa * gb - hab * ga) / det
+        a, b = a + da, b + db
+        if abs(da) + abs(db) < 1e-6:
+            break
+    return a, b
+
+
+def modele_victoire(all_stats, minimum=30):
+    """Probabilité de gagner un match selon l'écart de cote, calibrée sur les
+    matchs de la saison du club (chacun compté une fois, forfaits exclus), par
+    tableau : P = 1 / (1 + exp(-(a + b * écart / 100))), écart = ma cote -
+    cote adverse (moyenne des deux en double). En double, seule la cote du
+    joueur du club est connue côté club : approximation de celle de la paire.
+    -> {tableau: {"a", "b", "n"}} (tableau absent si moins de `minimum` matchs)."""
+    par_tableau = defaultdict(list)
+    for m, _, _ in matchs_club_uniques(all_stats):
+        if m.get("forfait") or m.get("ma_cote") is None or m.get("adversaire_cote") is None:
+            continue
+        par_tableau[m["tableau"]].append(((m["ma_cote"] - m["adversaire_cote"]) / 100, 1 if m["victoire"] else 0))
+    out = {}
+    for tableau, points in par_tableau.items():
+        if len(points) >= minimum:
+            a, b = _logistique(points)
+            out[tableau] = {"a": round(a, 4), "b": round(b, 4), "n": len(points)}
+    return out
+
+
+def _instantanes(historique):
+    """Instantanés de l'effectif utiles à la page : l'export précédent (cotes
+    et classements, pour les actualités de la semaine) et le premier de la
+    saison (cotes, pour la progression des joueurs sans fiche complète). Le
+    dernier instantané est celui des données affichées (export complet, ou
+    dump régénéré) : le précédent est l'avant-dernier."""
+    exports = sorted(((historique or {}).get("exports") or {}).items())
+    garder = lambda cle, v: {"cle": cle, "cotes": v.get("cotes") or {}, "classements": v.get("classements") or {}}
+    return {
+        "precedent": garder(*exports[-2]) if len(exports) >= 2 else None,
+        "premier": {"cle": exports[0][0], "cotes": exports[0][1].get("cotes") or {}} if len(exports) >= 2 else None,
+    }
+
+
 def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
     joueurs = sorted((_joueur_payload(s) for s in all_stats), key=lambda j: j["nom"])
     return {
@@ -545,6 +607,9 @@ def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
         "historique_forme": {k: v.get("forme", {}) for k, v in sorted(((historique or {}).get("exports") or {}).items())},
         # cotes de J-10 des week-ends à venir (hiérarchie réglementaire)
         "cotes_j10": _cotes_j10_payload(historique, interclubs),
+        # pronostics (planificateur, rapports de rencontre)
+        "modele_victoire": modele_victoire(all_stats),
+        "instantanes": _instantanes(historique),
     }
 
 

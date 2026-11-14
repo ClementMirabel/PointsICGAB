@@ -82,6 +82,28 @@ class TestRegles(unittest.TestCase):
         self.assertEqual(historique_ic.cotes_j10(h, "2026-11-28")[0], "2026-11-26T01:05Z")
         self.assertIsNone(historique_ic.cotes_j10(h, "2026-12-19"))
 
+    # --- pronostics
+    def test_logistique(self):
+        # données construites : plus l'écart est grand, plus on gagne
+        points = [(x / 10, 1 if (x * 7919) % 100 < 50 + x * 4 else 0) for x in range(-10, 11) for _ in range(5)]
+        a, b = export_web._logistique(points)
+        self.assertGreater(b, 0)
+        self.assertLess(abs(a), 1)
+
+    def test_modele_victoire(self):
+        modele = export_web.modele_victoire(self.all_stats, minimum=1)
+        self.assertTrue(modele)
+        for m in modele.values():
+            self.assertEqual(set(m), {"a", "b", "n"})
+
+    def test_instantanes(self):
+        h = {"v": 1, "weekends": {}}
+        for jour in ("2026-11-05", "2026-11-12"):
+            historique_ic.ajouter_export(h, [], self.effectif, datetime.fromisoformat(jour + "T01:05:00+00:00"))
+        inst = export_web._instantanes(h)
+        self.assertEqual(inst["precedent"]["cle"], "2026-11-05T01:05Z")
+        self.assertTrue(inst["precedent"]["classements"])
+
     # --- sorties : calendriers et page
     def test_calendriers(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -52,11 +52,19 @@ class TestPage(unittest.TestCase):
         joueur = df.CLUB["Arthur ALPHA"][1]
         pages = ["", "#club/classement", "#club/competitions", "#club/categories", "#club/profil", "#club/records",
                  "#club/detail/clutch/SH", "#club/detail/outsider/Club%20(tous%20tableaux)", "#club/detail/or/Club%20(tous%20tableaux)",
-                 "#club/tournoi/0", "#club/suivi", "#club/paires", "#ic", "#ic/pilotage", "#ic/1", "#ic/2", "#ic/adv/9100", "#plan", f"#joueur/{joueur}"]
+                 "#club/tournoi/0", "#club/suivi", "#club/paires", "#club/actus", f"#comparer/{joueur},{df.CLUB['Cyril CHARLIE'][1]}", "#ic", "#ic/pilotage", "#ic/1", "#ic/2", "#ic/adv/9100", "#plan", f"#joueur/{joueur}"]
         for ancre in pages:
             with self.subTest(page=ancre):
                 self.aller(ancre)
                 self.verifier_sans_erreur(ancre)
+
+    def test_rapport_de_rencontre(self):
+        self.aller("#ic/adv/9100")
+        lien = self.js("[...document.querySelectorAll('a.eq')].find(a => a.innerText === 'feuille')?.getAttribute('href')")
+        self.assertTrue(lien, "aucune rencontre jouée contre l'adversaire 9100")
+        self.aller(lien)
+        self.assertIn("Rapport de la rencontre", self.js("document.querySelector('#main').innerText"))
+        self.verifier_sans_erreur(lien)
 
     def test_planificateur(self):
         self.aller("#plan")
@@ -80,6 +88,7 @@ class TestPage(unittest.TestCase):
         time.sleep(1.5)
         self.assertEqual(self.js("[...document.querySelectorAll('select[data-cote=gab]')].filter(s => !s.value).length"), 0)
         self.assertFalse(self.js("[...document.querySelectorAll('#planChecks .chk.ko')].map(c => c.innerText)"))
+        self.assertIn("score attendu", self.js("document.querySelector('#planPronostic').innerText"))
         self.verifier_sans_erreur(lien)
         # le plan survit au rechargement
         self.d.refresh()

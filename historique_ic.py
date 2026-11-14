@@ -58,6 +58,8 @@ def ajouter_export(hist, all_stats, effectif, maintenant=None):
     arrondi = lambda v: round(v, 1) if isinstance(v, (int, float)) else None
     exports[maintenant.strftime("%Y-%m-%dT%H:%MZ")] = {
         "cotes": {p["licence"]: p["cotes"] for p in (effectif or [])},
+        # classements S/D/M : montées et descentes de la semaine (actualités)
+        "classements": {p["licence"]: p["classements"] for p in (effectif or [])},
         "forme": {s["Licence"]: [arrondi(s["global"].get("indice_forme"))]
                   + [arrondi(s["par_tableau"][t].get("indice_forme")) for t in ("Simple", "Double", "Mixte")]
                   for s in all_stats},

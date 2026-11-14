@@ -8,10 +8,10 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 
 | Onglet | Contenu |
 |---|---|
-| **Club** | Aperçu (avec l'évolution depuis la semaine précédente), classement de forme, compétitions et tournois, stats par catégorie (chaque chiffre ouvre la liste des matchs concernés), profil de jeu, records et rivalités internes, suivi (progression depuis septembre, joueurs proches du classement supérieur, joueurs sans match récent), meilleures paires de double et de mixte |
+| **Club** | Aperçu (avec l'évolution depuis la semaine précédente), actualités de la semaine (résultats, montées de classement, joueurs brûlés, exploits, séries), classement de forme, compétitions et tournois, stats par catégorie (chaque chiffre ouvre la liste des matchs concernés), profil de jeu, records et rivalités internes, suivi (progression depuis septembre, joueurs proches du classement supérieur, potentiel des jeunes, joueurs sans match récent), meilleures paires de double et de mixte |
 | **Interclubs** | Équipes 1 à 6 : rencontres, joueurs alignés sur chaque match, bilans par match et par joueur, classement de poule, fiche de chaque adversaire (résultats de poule, composition type, effectif, confrontations avec le GAB), calendriers à ajouter à son agenda ; page **Pilotage** : enjeux de poule (projection, rencontres clés), profondeur d'effectif par équipe, charge et présence des joueurs, classés jamais alignés, bilan par poste et par adversaire |
 | **Planificateur** | Affectation des joueurs par week-end d'interclubs, composition des rencontres, contrôles réglementaires, export Excel |
-| **Joueurs** | Une fiche par joueur : forme par tableau, évolution de la cote et de l'indice de forme semaine après semaine, faits marquants, confrontations avec les autres joueurs du club, partenaires, matchs, interclubs |
+| **Joueurs** | Une fiche par joueur : attributs notés sur 20 (radar), rythme et série en cours, forme par tableau, évolution de la cote et de l'indice de forme semaine après semaine, faits marquants, confrontations avec les autres joueurs du club, partenaires, matchs, interclubs ; comparateur de 2 ou 3 joueurs (radars superposés, face-à-face, résultats en paire) |
 
 ### Le planificateur, en bref
 
@@ -22,6 +22,7 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
   - 2 matchs maximum par joueur et pas deux dans la même discipline ; hiérarchie des cotes (SH1 ≥ SH2…) ;
   - joueurs « brûlés » : ICR AURA art. 12 pour les équipes régionales, CD38 art. 8 pour les équipes départementales (bandeau rouge si interdit, jaune si le faire jouer le bloquera ensuite) ;
   - 2 joueurs mutés maximum par rencontre (ICR art. 13, CD38 art. 11-4).
+- **Pronostic** : probabilité de victoire de chaque match et score attendu, d'après un modèle calibré chaque semaine sur les matchs du club (écart de cote → % de victoires). Les rencontres jouées ont un rapport : score attendu contre score réel, joueur du match, exploits et contre-performances.
 - **Week-ends passés** : affichage de ce qui s'est réellement joué (feuilles icbad), avec les valeurs des joueurs figées à l'export qui a suivi le week-end.
 - **Sauvegarde** : le plan est enregistré **dans le navigateur** de chacun ; il est conservé d'une semaine à l'autre mais n'est pas partagé. Pour l'échanger entre capitaines : « Exporter le plan », puis « Importer un plan » de l'autre côté.
 - **Export Excel** d'un week-end, au format du classeur « INTERCLUBS » (propositions d'équipe, valeurs, compositions).
