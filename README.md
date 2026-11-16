@@ -11,7 +11,7 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 | **Club** | Aperçu (avec l'évolution depuis la semaine précédente), actualités de la semaine (résultats, montées de classement, joueurs brûlés, exploits, séries), classement de forme, compétitions et tournois, stats par catégorie (chaque chiffre ouvre la liste des matchs concernés), profil de jeu, records et rivalités internes, suivi (progression depuis septembre, joueurs proches du classement supérieur, potentiel des jeunes, joueurs sans match récent), meilleures paires de double et de mixte |
 | **Interclubs** | Équipes 1 à 6 : rencontres, joueurs alignés sur chaque match, bilans par match et par joueur, classement de poule, fiche de chaque adversaire (résultats de poule, composition type, effectif, confrontations avec le GAB), calendriers à ajouter à son agenda ; page **Pilotage** : enjeux de poule (projection, rencontres clés), profondeur d'effectif par équipe, charge et présence des joueurs, classés jamais alignés, bilan par poste et par adversaire |
 | **Planificateur** | Affectation des joueurs par week-end d'interclubs, composition des rencontres, contrôles réglementaires, export Excel |
-| **Joueurs** | Une fiche par joueur : attributs notés sur 20 (radar), rythme et série en cours, forme par tableau, évolution de la cote et de l'indice de forme semaine après semaine, faits marquants, confrontations avec les autres joueurs du club, partenaires, matchs, interclubs ; comparateur de 2 ou 3 joueurs (radars superposés, face-à-face, résultats en paire) |
+| **Joueurs** | Une fiche par joueur : attributs notés sur 20 (radar), préparation jour par jour (modèle condition – fatigue, voir plus bas), rythme et série en cours, forme par tableau, évolution de la cote et de l'indice de forme semaine après semaine, faits marquants, confrontations avec les autres joueurs du club, partenaires, matchs, interclubs ; comparateur de 2 ou 3 joueurs (radars superposés, face-à-face, résultats en paire) |
 
 ### Le planificateur, en bref
 
@@ -28,6 +28,12 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 - **Export Excel** d'un week-end, au format du classeur « INTERCLUBS » (propositions d'équipe, valeurs, compositions).
 
 Les jeunes (Minibad à Junior, catégorie d'âge myffbad) portent un badge U9 à U19 partout où leur nom apparaît, et un filtre « Jeunes » existe dans le classement et le suivi.
+
+## 📈 Préparation des joueurs
+
+Courbe jour par jour sur chaque fiche, reprise dans Interclubs → Pilotage, le planificateur (valeur la veille du week-end) et le comparateur. Modèle « fitness – fatigue » : chaque match (charge = points joués, un 3e set ou des sets serrés pèsent plus) construit une **condition** lente (~4 semaines) et une **fatigue** rapide (~5 jours) ; préparation = condition − fatigue, avec une fatigue qui s'alourdit quand on enchaîne (usure). Échelle 0-100 centrée sur **50 = entraînement seul** (les entraînements ne sont pas connus) : la compétition fait monter jusqu'à 100 (pic autour de 6 à 8 matchs par semaine réguliers), la fatigue et l'usure font descendre sous 50.
+
+Références : Banister et al. (1975), *A systems model of training for athletic performance* ; Busso (2003), *Variable dose-response relationship between exercise training and performance* (fatigue non linéaire) ; Allen & Coggan, *Training and Racing with a Power Meter* (condition/fatigue/forme) ; Gabbett (2016), *The training–injury prevention paradox* (ratio charge récente / de fond), avec la critique d'Impellizzeri et al. (2020).
 
 ## 🎯 Objectifs de saison
 

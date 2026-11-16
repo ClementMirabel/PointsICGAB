@@ -195,6 +195,7 @@ abbr.jeune { text-decoration: none; display: inline-block; font-size: 10px; font
 .etat.ok { background: rgba(12,163,12,.14); color: var(--good-text); }
 .etat.warn { background: rgba(250,178,25,.20); color: var(--ink); }
 .etat.ko { background: rgba(208,59,59,.14); color: var(--bad-text); }
+.etat.neutre { background: var(--surface-2); color: var(--ink-2); }
 .jauge { display: inline-block; width: 70px; height: 7px; border-radius: 4px; background: var(--grid); vertical-align: middle; overflow: hidden; }
 .jauge i { display: block; height: 100%; background: var(--good); }
 table.t tfoot td { border-top: 2px solid var(--axis); border-bottom: 0; font-weight: 600; }
@@ -271,6 +272,7 @@ a.eq:hover { background: var(--surface-2); }
 .chart svg { display: block; width: 100%; overflow: visible; }
 .chart text { fill: var(--muted); font-size: 11px; }
 .chart .lbl { fill: var(--ink-2); font-size: 11.5px; }
+.radar text { fill: var(--ink-2); }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
@@ -629,7 +631,7 @@ function renderJoueur(j) {
   });
   const auMoinsUnFait = T.some(t => tab[t].meilleure_victoire || tab[t].pire_defaite);
 
-  $("#main").innerHTML = pick + hero + sectionAttributs(j) + `
+  $("#main").innerHTML = pick + hero + sectionAttributs(j) + sectionPreparation(j) + `
     <section><h2>Par tableau</h2>
       <p class="hint">Indice forme = moyenne du taux de victoire lissé et des points de cote gagnés par match, en rang parmi les joueurs du même tableau (même genre en simple et double). 50 = médiane.</p>
       <div class="grid g3">${cards}</div>
@@ -677,6 +679,7 @@ function renderJoueur(j) {
   drawTendanceForme(j);
   drawMatchs(j);
   drawAttributs(j);
+  drawPreparation(j);
 }
 
 /* "3e sur 21 en DH" : rang de forme du joueur parmi ceux qui ont joué ce tableau (même genre sauf en mixte) */
@@ -1576,8 +1579,10 @@ function renderJoueurIC(x) {
       <div class="stat"><div class="v num">${pct(b.pct)}</div><div class="l">de victoires (${b.v} V – ${b.j - b.v} D)</div></div>
       <div class="stat"><div class="v">${x.equipes.sort((a, c) => a - c).map(n => `<a class="eq" style="font-size:14px" href="#ic/${n}">Équipe ${n}</a>`).join(" ")}</div><div class="l">inscrit(e) en interclubs</div></div>
     </div>
+    ${sectionPreparation(x)}
     ${sectionICJoueur(x.licence, x.nom) || `<div class="card empty" style="margin-top:20px">Aucun match d'interclub joué pour l'instant.</div>`}`;
   $("#mobilePick").addEventListener("change", e => { location.hash = "joueur/" + e.target.value; });
+  drawPreparation(x);
 }
 
 /* lien vers la page de la rencontre dans le planificateur (équipes 1 à PLAN_NB, rencontre datée) */
@@ -2271,6 +2276,9 @@ function planWeekend(el, w, wes) {
       { k: "nom", label: "Joueur", val: r => r.nom, html: r => `<span draggable="true" data-lic="${r.licence}" class="poignee" title="Glisser vers une équipe">⠿</span> ${lienJoueurIC(r.licence, r.nom)}${badgeMute(estMute(r.licence))}${tagCharge(r.licence, r.nom)}` },
       { k: "sexe", label: "", val: r => r.sexe, sm: true },
       { k: "clt", label: "Clt S/D/M", val: r => Math.max(...(r.cotes || [0])), html: clsBadges, sm: true },
+      { k: "prepa", label: "Prépa.", val: r => prepaVeille(r.licence, r.nom, w.samedi)?.prepa, sm: true, num: true,
+        title: "Préparation estimée la veille du week-end (0-100), sans autre match d'ici là",
+        html: r => { const x = prepaVeille(r.licence, r.nom, w.samedi); return x ? `<span title="${esc(etatPrepa(x)[1])}" style="color:${etatPrepa(x)[0] === "ok" ? "var(--good-text)" : etatPrepa(x)[0] === "ko" ? "var(--bad-text)" : "var(--ink)"}">${fmt(x.prepa)}</span>` : "–"; } },
       { k: "icn", label: "ICN", val: r => r.icn, num: true, title: "Valeur en Interclubs Nationaux (équipe 1)" },
       { k: "icr", label: "ICR", val: r => r.icr, num: true, title: "Valeur en Interclubs Régionaux (N1 = 57)" },
       { k: "hist", label: "Rencontres par équipe", title: "Rencontres jouées (+ prévues au planificateur avant ce week-end). ⛔ : équipes où le joueur ne peut plus jouer (ICR art. 12, CD38 art. 8).",
@@ -2985,11 +2993,12 @@ function icPilotage(el) {
     { k: "renc", label: "Rencontres", val: r => r.renc, num: true, sm: true },
     { k: "m", label: "Matchs", val: r => r.matchs, num: true },
     { k: "dernier", label: "Dernière", val: r => r.dernier, html: r => r.dernier ? fDate(r.dernier) : "–", num: true, sm: true },
+    { k: "prepa", label: "Prépa.", val: r => r.pr?.prepa, html: r => cellPrepa(r.pr), num: true, title: "Préparation aujourd'hui (0-100), voir la fiche du joueur" },
     { k: "affilee", label: "Sem. d'affilée", val: r => r.ry.affilee, html: r => r.ry.affilee >= 3 ? `<b style="color:var(--bad-text)">${r.ry.affilee}</b>` : r.ry.affilee, num: true,
       title: "Semaines de compétition d'affilée (tournois et interclubs) jusqu'à la dernière semaine écoulée" },
     { k: "recents", label: `Matchs ${RYTHME_SEMAINES} sem.`, val: r => r.ry.matchsRecents, num: true, sm: true },
     { k: "derniers", label: "5 derniers", val: r => r.ry.derniers.filter(Boolean).length, html: r => fmtDerniers(r.ry.derniers), sm: true },
-  ], charge.map(r => ({ ...r, ry: rythmeJoueur(r.licence, r.nom) })), { defaut: { cle: "wes", sens: -1 } });
+  ], charge.map(r => ({ ...r, ry: rythmeJoueur(r.licence, r.nom), pr: preparation(r.licence, r.nom).dernier })), { defaut: { cle: "wes", sens: -1 } });
 
   const drawJamais = () => {
     const seuils = { R6: 18, D7: 12, D9: 6 };
@@ -3227,7 +3236,7 @@ function sectionAttributs(j) {
   const r = rythmeJoueur(j.licence, j.nom);
   return `<section><h2>Attributs</h2>
     <p class="hint">Notes sur 20 en rang dans le club : 20 = le meilleur, 10 = la médiane. « – » : pas assez de matchs pour noter. <a href="#comparer/${j.licence}">Comparer avec d'autres joueurs</a></p>
-    <div class="grid g2 attributs"><div class="card" style="display:flex;justify-content:center"><div id="radarJoueur" style="width:100%;display:flex;justify-content:center"></div></div>
+    <div class="grid g2 attributs"><div class="card" style="display:flex;justify-content:center"><div id="radarJoueur" class="radar" style="width:100%;display:flex;justify-content:center"></div></div>
       <div class="card tcard">${ATTRIBUTS.map(a => { const n = noteDe(j, a.k);
         return `<div class="row" title="${esc(a.aide)}"><span>${a.label} <span class="muted small">${a.detail ? a.detail(j) : ""}</span></span><b class="num" style="color:${couleurNote(n)}">${n ?? "–"}<span class="muted small">/20</span></b></div>`; }).join("")}
         <div class="row" style="margin-top:6px"><span>Rythme</span><span class="small" style="text-align:right">${r.affilee} semaine${r.affilee > 1 ? "s" : ""} de compétition d'affilée · ${r.matchsRecents} matchs sur ${RYTHME_SEMAINES} semaines</span></div>
@@ -3256,7 +3265,7 @@ function renderComparer(param) {
     <section style="margin-top:0"><h2>Comparer des joueurs</h2>
       <p class="hint">Jusqu'à 3 joueurs avec une fiche complète. Notes sur 20 en rang dans le club.</p>
       <div class="chips cmp" id="cmpChoix" style="gap:10px">${[0, 1, 2].map(i => `<label class="small" style="display:flex;align-items:center;gap:6px"><span class="sw" style="background:${COULEURS_CMP[i]}"></span><select data-i="${i}" aria-label="Joueur ${i + 1}">${options(lics[i])}</select></label>`).join("")}</div></section>
-    ${js.length ? `<div class="grid g2" style="margin-top:14px"><div class="card" style="display:flex;justify-content:center"><div id="radarCmp" style="width:100%;display:flex;justify-content:center"></div></div>
+    ${js.length ? `<div class="grid g2" style="margin-top:14px"><div class="card" style="display:flex;justify-content:center"><div id="radarCmp" class="radar" style="width:100%;display:flex;justify-content:center"></div></div>
       <div class="card scroll cmp"><table class="t"><thead><tr><th></th>${js.map((j, i) => `<th class="r"><span class="sw" style="background:${COULEURS_CMP[i]}"></span><a href="#joueur/${j.licence}">${esc(j.nom)}</a>${badgeJeune(j.licence, j.nom)}</th>`).join("")}</tr></thead><tbody>
         ${T.map(t => ligne(t, j => `${badgeClt(j.tableaux[t].classement)} ${fmt(j.tableaux[t].cote)}`)).join("")}
         ${ligne("Matchs", j => j.global.matchs)}
@@ -3265,6 +3274,7 @@ function renderComparer(param) {
         ${ligne("Δ cote depuis sept.", j => `<span class="${deltaCls(j.global.diff_cote)}">${signed(j.global.diff_cote)}</span>`)}
         ${ligne("Interclubs", j => { const b = vj(matchsICDe(j.licence, j.nom).map(x => x.m)); return b.j ? `${b.v}/${b.j}` : "–"; })}
         ${ATTRIBUTS.map(a => ligne(a.label, meilleur(a.k), a.aide)).join("")}
+        ${ligne("Préparation", j => cellPrepa(preparation(j.licence, j.nom).dernier), AIDE_PREPA)}
         ${ligne("Semaines d'affilée", j => rythmeJoueur(j.licence, j.nom).affilee)}
         ${ligne("Série en cours", j => fmtSerie(rythmeJoueur(j.licence, j.nom).serie))}
       </tbody></table></div></div>
@@ -3505,6 +3515,119 @@ function clubObjectifs(el) {
     { k: "rythme", label: "Pts / sem.", val: r => r.rythme, html: r => r.rythme == null ? "–" : `<span class="${deltaCls(r.rythme)}">${signed(r.rythme, 1)}</span>`, num: true, sm: true },
     { k: "quand", label: "Échéance", val: r => r.atteint ? "" : r.quand || "~", html: texteQuand },
   ], lignes, { defaut: { cle: "av", sens: -1 } });
+}
+
+/* ---------- préparation (fitness – fatigue)
+   Modèle de Banister (1975) : chaque jour, la charge de compétition nourrit
+   une CONDITION lente (constante 28 jours) et une FATIGUE rapide (5 jours) ;
+   préparation = condition − k2 × fatigue. Fatigue non linéaire (Busso, 2003) :
+   k2 grossit avec la charge des 3 dernières semaines -> au-delà d'un certain
+   volume, jouer plus fait baisser la préparation (usure).
+   Réglage (mesuré le vendredi, à rythme régulier) : 1 match / semaine -> 27,
+   2 -> 49, 4 -> 82, 6 à 8 -> ~98 (optimum), 10 -> 81, 14 -> 0. Constantes
+   calées sur les joueurs du club (tournoi + interclubs le même week-end),
+   à ajuster si les courbes ne collent pas au terrain.
+   Charge d'un match = points joués / 70 (≈ 1 pour deux sets 21-15) : un match
+   en 3 sets ou aux sets serrés pèse plus. Seuls les matchs de compétition sont
+   connus (pas les entraînements) ; tout le monde part de zéro au 1er septembre. */
+const PREPA = { tau1: 28, tau2: 5, tau3: 21, k1: 1, k2: 0.8, aRef: 4, ptsMatch: 70 };
+const PREPA_E = [PREPA.tau1, PREPA.tau2, PREPA.tau3].map(t => Math.exp(-1 / t));
+/* 100 = meilleure préparation du vendredi atteignable à rythme régulier (matchs le week-end) */
+const PREPA_REF = (() => {
+  let best = 0;
+  for (let w = 0.5; w <= 15; w += 0.5) {
+    let F = 0, G = 0, A = 0, p = 0;
+    for (let d = 0; d < 200; d++) {
+      const L = d % 7 === 5 || d % 7 === 6 ? w / 2 : 0;
+      F = F * PREPA_E[0] + L; G = G * PREPA_E[1] + L; A = A * PREPA_E[2] + L;
+      if (d === 193) p = PREPA.k1 * F - PREPA.k2 * (1 + A / PREPA.aRef) * G;  // un vendredi en régime établi
+    }
+    best = Math.max(best, p);
+  }
+  return best;
+})();
+const PREPA_FREF = 7 * PREPA.tau1 / 7;  // condition moyenne d'un joueur à 7 matchs par semaine = 100
+const DEBUT_SAISON = () => `${DATA.saison.slice(0, 4)}-09-01`;
+function chargesDe(licence, nom) {
+  const f = ficheDe(licence, nom), out = [];
+  const pts = sets => sets.reduce((a, s) => a + s[0] + s[1], 0);
+  if (f) { for (const m of f.matchs) if (m.date && !m.forfait) { const p = pts(setsDe(m.score)); if (p) out.push({ date: m.date, charge: p / PREPA.ptsMatch }); } }
+  else for (const x of matchsICDe(licence, nom)) if (x.r.date) out.push({ date: x.r.date, charge: (pts(x.m.sets) || PREPA.ptsMatch) / PREPA.ptsMatch });
+  return out;
+}
+const _prepa = new Map();
+/* simulation jour par jour du 1er septembre à `jusqua` (sans match après la dernière date connue) */
+function preparation(licence, nom, jusqua = AUJ) {
+  const cle = licence + "|" + jusqua;
+  if (_prepa.has(cle)) return _prepa.get(cle);
+  const parJour = new Map();
+  for (const c of chargesDe(licence, nom)) parJour.set(c.date, (parJour.get(c.date) || 0) + c.charge);
+  const [e1, e2, e3] = PREPA_E;
+  let F = 0, G = 0, A = 0, aigu = 0, chronique = 0;
+  const jours = [];
+  for (let d = DEBUT_SAISON(); d <= jusqua; d = plusJours(d, 1)) {
+    const L = parJour.get(d) || 0;
+    F = F * e1 + L; G = G * e2 + L; A = A * e3 + L;
+    aigu = aigu * e2 + L * (1 - e2); chronique = chronique * e1 + L * (1 - e1);  // moyennes (charge par jour)
+    const k2 = PREPA.k2 * (1 + A / PREPA.aRef);
+    const p = PREPA.k1 * F - k2 * G;
+    // échelle centrée sur 50 = entraînement seul (pas de compétition récente) : la compétition fait
+    // monter jusqu'à 100 (pic), la fatigue fait descendre sous 50
+    jours.push({ d, L, prepa: Math.max(0, Math.min(100, 50 + 50 * p / PREPA_REF)), condition: Math.min(100, F / PREPA_FREF * 100),
+      fatigue: Math.min(100, k2 * G / PREPA_FREF * 100), ratio: chronique > 0.02 ? aigu / chronique : null, chronique });
+  }
+  const res = { jours, dernier: jours[jours.length - 1] || null };
+  _prepa.set(cle, res);
+  return res;
+}
+/* état lisible d'un jour de simulation */
+function etatPrepa(j) {
+  if (!j) return ["ko", "inconnu"];
+  if (j.ratio != null && j.ratio > 1.5 && j.prepa < 50) return ["ko", "surcharge"];
+  if (j.prepa < 40) return ["warn", "fatigué"];
+  if (j.condition < 8) return ["neutre", "entraînement seul"];  // moins d'un match toutes les 2 semaines environ
+  if (j.prepa >= 70) return ["ok", "prêt"];
+  return ["neutre", "en rodage"];
+}
+const AIDE_PREPA = "Préparation (0-100) : 50 = référence d'un joueur qui s'entraîne sans compétition récente (les entraînements ne sont pas connus). Les matchs construisent une condition qui fait monter la courbe, jusqu'à 100 autour de 6 à 8 matchs par semaine réguliers ; la fatigue des derniers jours la fait descendre sous 50, et l'usure quand on enchaîne trop (modèle fitness-fatigue de Banister, fatigue de Busso).";
+const cellPrepa = j => j ? `<span title="${esc(AIDE_PREPA)}"><b class="num">${fmt(j.prepa)}</b> ${pastilleEtat(etatPrepa(j))}</span>` : "–";
+/* préparation la veille d'un week-end (vendredi), en supposant aucun match d'ici là */
+const prepaVeille = (licence, nom, samedi) => preparation(licence, nom, plusJours(samedi, -1)).dernier;
+
+function sectionPreparation(j) {
+  const x = preparation(j.licence, j.nom).dernier;
+  return `<section><h2>Préparation</h2>
+    <p class="hint">${esc(AIDE_PREPA)} Courbe jour par jour ; un point chaque vendredi, veille du week-end. Ligne 50 : référence entraînement seul ; zone verte : 70 ou plus (« prêt »).
+      ${x ? `Aujourd'hui : <b>${fmt(x.prepa)}</b> ${pastilleEtat(etatPrepa(x))} · condition ${fmt(x.condition)} · fatigue ${fmt(x.fatigue)}${x.ratio != null ? ` · charge récente / de fond ${fmt(x.ratio, 2)}` : ""}.` : ""}</p>
+    <div class="card"><div class="legend"><span><i style="background:var(--s)"></i>Préparation</span><span><i style="background:var(--good)"></i>Condition</span><span><i style="background:var(--bad)"></i>Fatigue</span><span><i style="background:var(--grid)"></i>Matchs de la semaine (en matchs de 2 sets)</span></div>
+      <div class="chart" id="cPrepa"></div></div></section>`;
+}
+function drawPreparation(j) {
+  const el = $("#cPrepa"); if (!el) return;
+  const { jours } = preparation(j.licence, j.nom);
+  if (!jours.some(x => x.L)) { el.innerHTML = `<div class="empty">Aucun match cette saison.</div>`; return; }
+  // courbes jour par jour (dent de scie fatigue -> récupération), repère chaque vendredi, matchs par semaine en barres
+  const W = Math.max(320, el.clientWidth), H = 250, m = { l: 34, r: 10, t: 10, b: 26 }, n = jours.length;
+  const X = i => m.l + (W - m.l - m.r) * (n > 1 ? i / (n - 1) : 0.5), Y = v => m.t + (1 - v / 100) * (H - m.t - m.b);
+  const semaines = [];
+  jours.forEach((x, i) => { const s0 = samediDe(x.d); const s = semaines[semaines.length - 1];
+    if (!s || s.samedi !== s0) semaines.push({ samedi: s0, i0: i, i1: i, charge: x.L }); else { s.i1 = i; s.charge += x.L; } });
+  const maxSem = Math.max(4, ...semaines.map(s => s.charge)), Yb = v => H - m.b - v / maxSem * (H - m.t - m.b) * 0.4;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Préparation jour par jour">`;
+  svg += `<rect x="${m.l}" y="${Y(100)}" width="${W - m.l - m.r}" height="${Y(70) - Y(100)}" fill="var(--good)" opacity=".08"/>`;
+  for (const v of [0, 25, 50, 75, 100]) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}" ${v === 50 ? 'stroke-dasharray="6 4"' : ""}/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end" class="num">${v}</text>`;
+  svg += `<text x="${W - m.r - 4}" y="${Y(50) - 5}" text-anchor="end" class="lbl" style="font-size:10.5px">entraînement seul</text>`;
+  for (const s of semaines) if (s.charge > 0) svg += `<rect x="${X(s.i0) + 1}" y="${Yb(s.charge)}" width="${Math.max(2, X(s.i1) - X(s.i0) - 2)}" height="${H - m.b - Yb(s.charge)}" fill="var(--grid)"><title>Semaine du ${fDate(s.samedi)} : ${fmt(s.charge, 1)} match(s) équivalent(s)</title></rect>`;
+  const courbe = (cle, couleur, tirets) => `<path d="${jours.map((x, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(x[cle]).toFixed(1)}`).join("")}" fill="none" stroke="${couleur}" stroke-width="${tirets ? 1.3 : 2.2}" ${tirets ? 'stroke-dasharray="4 3"' : ""} stroke-linejoin="round"/>`;
+  svg += courbe("condition", "var(--good)", true) + courbe("fatigue", "var(--bad)", true) + courbe("prepa", "var(--s)", false);
+  const pas = Math.max(1, Math.ceil(semaines.length / Math.max(1, Math.floor((W - m.l - m.r) / 56))));
+  jours.forEach((x, i) => {
+    if (d2(x.d).getDay() !== 5 && i !== n - 1) return;
+    const e = etatPrepa(x);
+    svg += `<circle cx="${X(i)}" cy="${Y(x.prepa)}" r="3.2" fill="var(--s)" stroke="var(--surface)" stroke-width="1.5"><title>${fJour(x.d)} : préparation ${fmt(x.prepa)} (${e[1]}) · condition ${fmt(x.condition)} · fatigue ${fmt(x.fatigue)}</title></circle>`;
+  });
+  semaines.forEach((s, k) => { if (k % pas === 0) svg += `<text x="${X(s.i0)}" y="${H - 6}" text-anchor="start">${fDate(s.samedi)}</text>`; });
+  el.innerHTML = svg + "</svg>";
 }
 
 /* ---------- démarrage */

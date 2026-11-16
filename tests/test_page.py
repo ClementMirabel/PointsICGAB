@@ -58,6 +58,13 @@ class TestPage(unittest.TestCase):
                 self.aller(ancre)
                 self.verifier_sans_erreur(ancre)
 
+    def test_preparation(self):
+        self.aller("#joueur/" + df.CLUB["Arthur ALPHA"][1])
+        self.assertTrue(self.js("!!document.querySelector('#cPrepa svg circle')"), "courbe de préparation absente")
+        valeurs = self.js("[...document.querySelectorAll('#cPrepa svg circle title')].map(t => +t.textContent.match(/préparation (\\d+)/)[1])")
+        self.assertTrue(all(0 <= v <= 100 for v in valeurs))
+        self.verifier_sans_erreur("préparation")
+
     def test_rapport_de_rencontre(self):
         self.aller("#ic/adv/9100")
         lien = self.js("[...document.querySelectorAll('a.eq')].find(a => a.innerText === 'feuille')?.getAttribute('href')")
