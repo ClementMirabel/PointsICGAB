@@ -52,7 +52,7 @@ class TestPage(unittest.TestCase):
         joueur = df.CLUB["Arthur ALPHA"][1]
         pages = ["", "#club/classement", "#club/competitions", "#club/categories", "#club/profil", "#club/records",
                  "#club/detail/clutch/SH", "#club/detail/outsider/Club%20(tous%20tableaux)", "#club/detail/or/Club%20(tous%20tableaux)",
-                 "#club/tournoi/0", "#club/suivi", "#club/paires", "#club/actus", f"#comparer/{joueur},{df.CLUB['Cyril CHARLIE'][1]}", "#ic", "#ic/pilotage", "#ic/1", "#ic/2", "#ic/adv/9100", "#plan", f"#joueur/{joueur}"]
+                 "#club/tournoi/0", "#club/suivi", "#club/paires", "#club/actus", "#club/objectifs", f"#comparer/{joueur},{df.CLUB['Cyril CHARLIE'][1]}", "#ic", "#ic/pilotage", "#ic/1", "#ic/2", "#ic/adv/9100", "#plan", f"#joueur/{joueur}"]
         for ancre in pages:
             with self.subTest(page=ancre):
                 self.aller(ancre)

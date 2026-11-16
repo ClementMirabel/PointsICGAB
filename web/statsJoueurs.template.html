@@ -191,6 +191,12 @@ abbr.jeune { text-decoration: none; display: inline-block; font-size: 10px; font
 .actus .actu { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 13.5px; }
 .actus .actu:last-child { border-bottom: 0; }
 .actus .ico { font-size: 15px; line-height: 1.3; }
+.etat { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
+.etat.ok { background: rgba(12,163,12,.14); color: var(--good-text); }
+.etat.warn { background: rgba(250,178,25,.20); color: var(--ink); }
+.etat.ko { background: rgba(208,59,59,.14); color: var(--bad-text); }
+.jauge { display: inline-block; width: 70px; height: 7px; border-radius: 4px; background: var(--grid); vertical-align: middle; overflow: hidden; }
+.jauge i { display: block; height: 100%; background: var(--good); }
 table.t tfoot td { border-top: 2px solid var(--axis); border-bottom: 0; font-weight: 600; }
 /* planificateur */
 /* colonnes fixées par le nombre d'équipes du week-end (voir colsPlan) : 6 -> 2 lignes de 3 */
@@ -568,6 +574,7 @@ function renderJoueur(j) {
         <div class="small muted" style="margin-top:8px">${j.ordre.length ? "Tableau le plus en forme : <b style='color:var(--ink)'>" + j.ordre[0] + "</b>" : "Aucun match cette saison"}
           · <a href="https://myffbad.fr/joueur/${esc(j.licence)}" target="_blank" rel="noopener">profil myffbad</a>
           · <a href="#comparer/${j.licence}">comparer</a></div>
+        ${objectifsDuJoueur(j.licence).map(x => `<div class="small" style="margin-top:6px">🎯 Objectif <a href="#club/objectifs">${badgeClt(x.clt)} en ${x.t.toLowerCase()}</a> ${x.atteint ? pastilleEtat(["ok", "atteint"]) : `${jauge(x.avancement)} <span class="muted">${x.avancement == null ? "" : fmt(x.avancement) + " %"}</span> ${texteQuand(x)}`}</div>`).join("")}
       </div>
       <div class="stat"><div class="v num">${g.matchs}</div><div class="l">matchs joués</div></div>
       <div class="stat"><div class="v num">${pct(g.pct)}</div><div class="l">de victoires (${g.victoires} V – ${g.matchs - g.victoires} D)</div></div>
@@ -902,7 +909,7 @@ function pairedBars(el, items, series, { max = 100, valFmt = v => pct(v) } = {})
 
 /* ---------- page club */
 const ONGLETS = { SH: ["Simple", "H"], SD: ["Simple", "F"], DH: ["Double", "H"], DD: ["Double", "F"], MX: ["Mixte", null] };
-const SOUS_PAGES = [["apercu", "Aperçu"], ["actus", "Actualités"], ["classement", "Classement"], ["competitions", "Compétitions"],
+const SOUS_PAGES = [["apercu", "Aperçu"], ["actus", "Actualités"], ["objectifs", "Objectifs"], ["classement", "Classement"], ["competitions", "Compétitions"],
   ["categories", "Stats club"], ["profil", "Profil de jeu"], ["records", "Records"], ["suivi", "Suivi"], ["paires", "Paires"]];
 const CC = { weekend: "var(--we)", soiree: "var(--so)", interclub: "var(--ic)" };
 const CL = { weekend: "Tournois week-end", soiree: "Tournois en soirée", interclub: "Interclubs" };
@@ -922,7 +929,7 @@ function renderClub(sous, reste = []) {
   if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1], reste[2]);
   if (sous === "tournoi") return clubTournoi($("#club"), reste[0]);
   ({ apercu: clubApercu, classement: clubClassement, competitions: clubCompetitions,
-     categories: clubCategories, profil: clubProfil, records: clubRecords, suivi: clubSuivi, paires: clubPaires, actus: clubActus })[sous]($("#club"));
+     categories: clubCategories, profil: clubProfil, records: clubRecords, suivi: clubSuivi, paires: clubPaires, actus: clubActus, objectifs: clubObjectifs })[sous]($("#club"));
 }
 
 /* matchs du club comptés UNE fois chacun (un double à deux joueurs du club
@@ -2918,7 +2925,7 @@ function icPilotage(el) {
     return { e, moi, dessus, dessous, cles, restantes: e.rencontres.filter(r => !r.jouee).length };
   });
   $("#pilotEnjeux").innerHTML = `<table class="t"><thead><tr><th>Équipe</th><th class="r">Clt</th><th class="r">Pts</th><th class="r hide-sm">Rythme</th><th class="r">Projection</th>
-    <th class="r hide-sm">Écart au-dessus</th><th class="r hide-sm">Écart en dessous</th><th>Rencontres clés à venir</th></tr></thead><tbody>
+    <th class="r hide-sm">Écart au-dessus</th><th class="r hide-sm">Écart en dessous</th><th>Objectif</th><th>Rencontres clés à venir</th></tr></thead><tbody>
     ${enjeux.map(({ e, moi, dessus, dessous, cles, restantes }) => `<tr class="click" data-href="#ic/${e.numero}">
       <td><span class="eq">Équipe ${e.numero}</span> <span class="muted small">${esc(e.division)}</span></td>
       <td class="r num">${ordinal(e.rang)} <span class="muted small">/ ${e.nb_equipes}</span></td>
@@ -2927,6 +2934,7 @@ function icPilotage(el) {
       <td class="r num">${restantes ? `${ordinal(moi.rangProj)} <span class="muted small">(${fmt(moi.final)} pts)</span>` : `<span class="muted">terminé</span>`}</td>
       <td class="r num hide-sm">${dessus ? `<span class="delta-down">${signed(moi.pts - dessus.pts)}</span> <span class="muted small" title="${esc(dessus.nom)}">${esc(dessus.code || "")}</span>` : `<span class="muted">en tête</span>`}</td>
       <td class="r num hide-sm">${dessous ? `<span class="delta-up">${signed(moi.pts - dessous.pts)}</span> <span class="muted small" title="${esc(dessous.nom)}">${esc(dessous.code || "")}</span>` : `<span class="muted">dernier</span>`}</td>
+      <td>${(o => o ? `<a href="#club/objectifs" title="${esc(o.libelle)} : ${ordinal(o.vise)} visé">${esc(o.libelle)}</a> ${pastilleEtat(o.etat)}` : `<span class="muted">–</span>`)(objectifEquipe(e))}</td>
       <td>${cles.length ? cles.map(({ r, adv }) => `<div>${r.date ? fDate(r.date) : "–"} · ${lienPlan(e, r, esc(r.adversaire_code || r.adversaire))} <span class="muted small">${ordinal(adv.rang)}, ${adv.pts} pts</span></div>`).join("")
         : `<span class="muted">${restantes ? "aucune" : "–"}</span>`}</td></tr>`).join("")}</tbody></table>`;
   $("#pilotEnjeux").onclick = ev => { const tr = ev.target.closest("tr[data-href]"); if (tr && !ev.target.closest("a")) location.hash = tr.dataset.href; };
@@ -3394,6 +3402,109 @@ function drawJeunesSuivi() {
     { k: "rythme", label: "Pts / sem.", val: r => r.rythme, html: r => r.rythme == null ? "–" : `<span class="${deltaCls(r.rythme)}">${signed(r.rythme, 1)}</span>`, num: true },
     { k: "proj", label: "Projection 30 juin", val: r => r.projection, html: r => r.projection == null ? "–" : `${fmt(r.projection)}${r.cltProj ? ` ${badgeClt(r.cltProj)}` : ""}`, num: true },
   ], state.jeunesTous ? tous : cotes, { defaut: { cle: "rythme", sens: -1 }, rowClass: r => r.cote > 400 ? "" : "few" });
+}
+
+/* ---------- objectifs de saison (fichier objectifs.json du dépôt) */
+const OBJ = DATA.objectifs || null;
+const URL_OBJECTIFS = "https://github.com/ClementMirabel/PointsICGAB/edit/main/objectifs.json";
+/* projection de fin de poule à rythme constant (même calcul que Pilotage > Enjeux) */
+function projectionPoule(e) {
+  const total = e.rencontres.length;
+  const proj = e.classement.map(c => ({ ...c, final: c.pts + (c.j ? c.pts / c.j : 0) * Math.max(0, total - c.j) })).sort((a, b) => b.final - a.final);
+  proj.forEach((c, i) => c.rangProj = i + 1);
+  return { moi: proj.find(c => c.club && c.code === e.code) || {}, proj, termine: e.rencontres.every(r => r.jouee) };
+}
+function objectifEquipe(e) {
+  const o = OBJ?.equipes?.[String(e.numero)];
+  if (!o) return null;
+  const vise = +o.rang_vise || 1, { moi, proj, termine } = projectionPoule(e);
+  const parRang = [...e.classement].sort((a, b) => a.rang - b.rang);
+  const cible = parRang[vise - 1], suivant = parRang[vise];
+  // écart : points à reprendre à l'équipe classée au rang visé, ou avance sur la suivante
+  const ecart = e.rang > vise ? (moi.pts ?? 0) - (cible?.pts ?? 0) : suivant ? (moi.pts ?? 0) - suivant.pts : null;
+  const etat = termine ? (e.rang <= vise ? ["ok", "atteint"] : ["ko", "manqué"])
+    : e.rang <= vise && moi.rangProj <= vise ? ["ok", "en bonne voie"]
+    : moi.rangProj <= vise ? ["warn", "jouable"] : ["ko", "en retard"];
+  return { o, vise, moi, ecart, etat, libelle: o.objectif || (vise === 1 ? "1re place" : `Top ${vise}`) };
+}
+const pastilleEtat = ([cls, txt]) => `<span class="etat ${cls}">${txt}</span>`;
+
+/* objectifs joueurs : {nom ou licence: {Simple|Double|Mixte: classement visé}} */
+function objectifsJoueurs() {
+  const out = [], inconnus = [];
+  for (const [cle, vises] of Object.entries(OBJ?.joueurs || {})) {
+    const p = effParLic.get(cle) || EFF.find(x => normNom(x.nom) === normNom(cle));
+    if (!p) { inconnus.push(cle); continue; }
+    for (const [t, clt] of Object.entries(vises || {})) {
+      const i = T.indexOf(t);
+      if (i < 0 || rangClt(clt) < 0) { inconnus.push(`${cle} (${t} ${clt})`); continue; }
+      out.push(objectifJoueur(p, i, clt));
+    }
+  }
+  return { lignes: out, inconnus };
+}
+function objectifJoueur(p, i, clt) {
+  const t = T[i], cote = p.cotes?.[i] ?? 0, actuel = p.classements?.[i];
+  const seuil = seuilsEstimes()[i + p.sexe]?.[clt] ?? null, atteint = rangClt(actuel) >= rangClt(clt);
+  const f = ficheDe(p.licence, p.nom), premier = DATA.instantanes?.premier;
+  let depart = null, ref = null;
+  if (f && f.tableaux[t].cote_sept != null) { depart = f.tableaux[t].cote_sept; ref = `${DATA.saison.slice(0, 4)}-09-01`; }
+  else if (premier?.cotes?.[p.licence]?.[i] != null) { depart = premier.cotes[p.licence][i]; ref = premier.cle.slice(0, 10); }
+  const avancement = atteint ? 100 : seuil != null && depart != null && seuil > depart ? Math.max(0, Math.min(100, (cote - depart) / (seuil - depart) * 100)) : null;
+  const semaines = ref ? (d2(AUJ) - d2(ref)) / 864e5 / 7 : 0;
+  const rythme = depart != null && semaines >= 3 ? (cote - depart) / semaines : null;
+  let quand = null;
+  if (!atteint && seuil != null && rythme > 0) {
+    const d = plusJours(AUJ, Math.ceil((seuil - cote) / rythme * 7));
+    quand = d <= FIN_SAISON() ? d : "après";
+  }
+  return { p, t, i, clt, actuel, cote, seuil, atteint, depart, ref, avancement, rythme, quand };
+}
+const objectifsDuJoueur = licence => objectifsJoueurs().lignes.filter(x => x.p.licence === licence);
+const jauge = v => v == null ? "" : `<span class="jauge" title="${fmt(v)} % du chemin depuis la cote de départ"><i style="width:${v.toFixed(0)}%"></i></span>`;
+function texteQuand(x) {
+  if (x.atteint) return pastilleEtat(["ok", "atteint"]);
+  if (x.seuil == null) return `<span class="muted">seuil inconnu (aucun joueur du club à ce classement)</span>`;
+  if (x.rythme == null) return `<span class="muted">rythme pas encore connu</span>`;
+  if (x.rythme <= 0) return pastilleEtat(["ko", "pas au rythme actuel"]);
+  return x.quand === "après" ? pastilleEtat(["warn", "après la fin de saison au rythme actuel"]) : pastilleEtat(["ok", `vers le ${fDate(x.quand)}`]);
+}
+
+function clubObjectifs(el) {
+  if (!OBJ || OBJ.erreur) {
+    el.innerHTML = `<div class="card">${OBJ?.erreur ? statut(false, esc(OBJ.erreur)) : `<p>Aucun objectif défini pour l'instant.</p>`}
+      <p class="hint">Les objectifs se saisissent dans le fichier <a href="${URL_OBJECTIFS}" target="_blank" rel="noopener">objectifs.json</a> du dépôt (bouton crayon sur GitHub, puis « Commit changes ») ; la page est régénérée en 2 minutes. Exemple :</p>
+      <pre class="small" style="white-space:pre-wrap">{
+  "equipes": { "2": { "objectif": "Montée", "rang_vise": 1 }, "5": { "objectif": "Maintien", "rang_vise": 4 } },
+  "joueurs": { "Prénom NOM": { "Simple": "N2" }, "Autre JOUEUR": { "Double": "R4", "Mixte": "R5" } }
+}</pre></div>`;
+    return;
+  }
+  const equipes = IC ? IC.equipes.map(e => ({ e, x: objectifEquipe(e) })).filter(y => y.x) : [];
+  const { lignes, inconnus } = objectifsJoueurs();
+  el.innerHTML = `<p class="hint">Objectifs saisis dans <a href="${URL_OBJECTIFS}" target="_blank" rel="noopener">objectifs.json</a> (modifiable sur GitHub ; la page se met à jour en 2 minutes).</p>
+    ${inconnus.length ? `<div class="card" style="margin-bottom:12px">${statut(false, `Introuvable dans l'effectif ou mal écrit : ${inconnus.map(esc).join(", ")}`)}</div>` : ""}
+    <section style="margin-top:0"><h2>Équipes</h2>${equipes.length ? `<div class="card scroll"><table class="t"><thead><tr><th>Équipe</th><th>Objectif</th><th class="r">Rang visé</th><th class="r">Rang actuel</th><th class="r">Projection</th><th class="r">Écart</th><th>État</th></tr></thead><tbody>
+      ${equipes.map(({ e, x }) => `<tr class="click" data-href="#ic/${e.numero}"><td><span class="eq">Équipe ${e.numero}</span> <span class="muted small">${esc(e.division)}</span></td>
+        <td><b>${esc(x.libelle)}</b></td><td class="r num">${ordinal(x.vise)}</td><td class="r num">${ordinal(e.rang)} <span class="muted small">/ ${e.nb_equipes}</span></td>
+        <td class="r num">${ordinal(x.moi.rangProj)} <span class="muted small">(${fmt(x.moi.final)} pts)</span></td>
+        <td class="r num" title="${e.rang > x.vise ? "Points de retard sur l'équipe classée au rang visé" : "Points d'avance sur l'équipe juste derrière le rang visé"}">${x.ecart == null ? "–" : `<span class="${deltaCls(x.ecart)}">${signed(x.ecart)} pts</span>`}</td>
+        <td>${pastilleEtat(x.etat)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="hint" style="margin-top:6px">Projection à rythme constant (points par rencontre), comme dans Interclubs → Pilotage.</p>` : `<div class="card empty">Aucun objectif d'équipe.</div>`}</section>
+    <section><h2>Joueurs</h2>${lignes.length ? `<div class="card scroll" id="objJoueurs"></div>
+      <p class="hint" style="margin-top:6px">Avancement : chemin parcouru depuis la cote du 1er septembre (fiche complète) ou du premier export enregistré, jusqu'au seuil estimé du classement visé (cote la plus basse d'un joueur du club à ce classement, même tableau et même sexe). Date : au rythme actuel de progression.</p>`
+      : `<div class="card empty">Aucun objectif individuel.</div>`}</section>`;
+  el.querySelector("table")?.addEventListener("click", ev => { const tr = ev.target.closest("tr[data-href]"); if (tr && !ev.target.closest("a")) location.hash = tr.dataset.href; });
+  if (lignes.length) sortableTable($("#objJoueurs"), "objJoueurs", [
+    { k: "nom", label: "Joueur", val: r => r.p.nom, html: r => lienJoueurIC(r.p.licence, r.p.nom) },
+    { k: "t", label: "Tableau", val: r => r.t, html: r => `<span class="tagsw"><i style="background:${TC[r.t]}"></i>${r.t}</span>` },
+    { k: "obj", label: "Actuel → visé", val: r => rangClt(r.clt), html: r => `${badgeClt(r.actuel)} → ${badgeClt(r.clt)}` },
+    { k: "cote", label: "Cote", val: r => r.cote, num: true },
+    { k: "seuil", label: "Seuil estimé", val: r => r.seuil, num: true, sm: true },
+    { k: "av", label: "Avancement", val: r => r.avancement, html: r => r.avancement == null ? "–" : `${jauge(r.avancement)} <span class="num small">${fmt(r.avancement)} %</span>`, num: true },
+    { k: "rythme", label: "Pts / sem.", val: r => r.rythme, html: r => r.rythme == null ? "–" : `<span class="${deltaCls(r.rythme)}">${signed(r.rythme, 1)}</span>`, num: true, sm: true },
+    { k: "quand", label: "Échéance", val: r => r.atteint ? "" : r.quand || "~", html: texteQuand },
+  ], lignes, { defaut: { cle: "av", sens: -1 } });
 }
 
 /* ---------- démarrage */

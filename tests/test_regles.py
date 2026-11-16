@@ -104,6 +104,17 @@ class TestRegles(unittest.TestCase):
         self.assertEqual(inst["precedent"]["cle"], "2026-11-05T01:05Z")
         self.assertTrue(inst["precedent"]["classements"])
 
+    def test_objectifs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            chemin = os.path.join(tmp, "objectifs.json")
+            self.assertIsNone(export_web.charger_objectifs(chemin))
+            with open(chemin, "w", encoding="utf-8") as f:
+                f.write('{"equipes": {"2": {"objectif": "Montée", "rang_vise": 1}}}')
+            self.assertEqual(export_web.charger_objectifs(chemin)["equipes"]["2"]["rang_vise"], 1)
+            with open(chemin, "w", encoding="utf-8") as f:
+                f.write('{"equipes": ')
+            self.assertIn("erreur", export_web.charger_objectifs(chemin))
+
     # --- sorties : calendriers et page
     def test_calendriers(self):
         with tempfile.TemporaryDirectory() as tmp:

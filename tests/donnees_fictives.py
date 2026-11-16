@@ -230,6 +230,13 @@ def construire(aujourd_hui=None):
     return all_stats, interclubs, effectif, historique
 
 
+# objectifs de saison fictifs (un nom inconnu : signalé sur la page)
+OBJECTIFS = {
+    "equipes": {"1": {"objectif": "Maintien", "rang_vise": 4}, "2": {"objectif": "Montée", "rang_vise": 1}},
+    "joueurs": {"Arthur ALPHA": {"Simple": "N1"}, "Basile BRAVO": {"Double": "N3", "Mixte": "R4"}, "Joueur INCONNU": {"Simple": "R5"}},
+}
+
+
 def ecrire_page(dossier, aujourd_hui=None):
     """Écrit la page HTML fictive dans `dossier` (sans réseau) et renvoie son chemin."""
     all_stats, interclubs, effectif, historique = construire(aujourd_hui)
@@ -241,6 +248,7 @@ def ecrire_page(dossier, aujourd_hui=None):
     export_web.resume_precedent = lambda: None  # pas d'appel réseau en test
     try:
         return export_web.write_stats_html(all_stats, os.path.join(dossier, "statsJoueurs.html"),
-                                           interclubs=interclubs, effectif=effectif, historique=historique)
+                                           interclubs=interclubs, effectif=effectif, historique=historique,
+                                           objectifs=OBJECTIFS)
     finally:
         export_web.resume_precedent = ancien

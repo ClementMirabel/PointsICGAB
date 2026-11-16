@@ -591,7 +591,28 @@ def _instantanes(historique):
     }
 
 
-def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
+OBJECTIFS_NOM = "objectifs.json"
+
+
+def charger_objectifs(path):
+    """Objectifs de saison (fichier objectifs.json du dépôt, modifiable sur
+    GitHub) : {"equipes": {"2": {"objectif": "Montée", "rang_vise": 1}},
+    "joueurs": {"Prénom NOM": {"Simple": "N2"}}}. Fichier absent -> None ;
+    fichier invalide -> {"erreur": message}, affiché sur la page plutôt que de
+    bloquer l'export."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            objectifs = json.load(f)
+        if not isinstance(objectifs, dict):
+            raise ValueError("le fichier doit contenir un objet { ... }")
+        return {"equipes": objectifs.get("equipes") or {}, "joueurs": objectifs.get("joueurs") or {}}
+    except (ValueError, OSError) as e:
+        return {"erreur": f"{OBJECTIFS_NOM} illisible : {e}"}
+
+
+def build_payload(all_stats, interclubs=None, effectif=None, historique=None, objectifs=None):
     joueurs = sorted((_joueur_payload(s) for s in all_stats), key=lambda j: j["nom"])
     return {
         "genere_le": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -610,15 +631,16 @@ def build_payload(all_stats, interclubs=None, effectif=None, historique=None):
         # pronostics (planificateur, rapports de rencontre)
         "modele_victoire": modele_victoire(all_stats),
         "instantanes": _instantanes(historique),
+        "objectifs": objectifs,
     }
 
 
 def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interclubs=None, effectif=None, historique=None,
-                     precedent=None):
+                     precedent=None, objectifs=None):
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
     assert DATA_PLACEHOLDER in template, f"{DATA_PLACEHOLDER} absent du gabarit {template_path}"
-    payload = build_payload(all_stats, interclubs, effectif, historique)
+    payload = build_payload(all_stats, interclubs, effectif, historique, objectifs)
     dossier = os.path.dirname(os.path.abspath(output_path))
     # precedent fourni ({} = « aucun » connu) : pas d'appel réseau
     payload["precedent"] = (precedent or None) if precedent is not None else resume_precedent()

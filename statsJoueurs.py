@@ -915,7 +915,8 @@ def ecrire_exports(all_stats, interclubs=None, effectif=None, historique=None, p
     export_excel.write_stats_excel(all_stats, output_path)
     html_path = export_web.write_stats_html(all_stats, os.path.join(APP_DIR, "statsJoueurs.html"),
                                             interclubs=interclubs, effectif=effectif, historique=historique,
-                                            precedent=precedent)
+                                            precedent=precedent,
+                                            objectifs=export_web.charger_objectifs(os.path.join(APP_DIR, export_web.OBJECTIFS_NOM)))
     print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}, {html_path}")
 
 

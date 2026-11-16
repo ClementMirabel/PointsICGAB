@@ -29,6 +29,19 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 
 Les jeunes (Minibad à Junior, catégorie d'âge myffbad) portent un badge U9 à U19 partout où leur nom apparaît, et un filtre « Jeunes » existe dans le classement et le suivi.
 
+## 🎯 Objectifs de saison
+
+À saisir dans [`objectifs.json`](objectifs.json) (bouton crayon sur GitHub, puis « Commit changes ») : la page est régénérée en 2 minutes et les affiche dans Club → Objectifs, sur la fiche des joueurs concernés et dans Interclubs → Pilotage.
+
+```json
+{
+  "equipes": { "2": { "objectif": "Montée", "rang_vise": 1 }, "5": { "objectif": "Maintien", "rang_vise": 4 } },
+  "joueurs": { "Prénom NOM": { "Simple": "N2" }, "Autre JOUEUR": { "Double": "R4", "Mixte": "R5" } }
+}
+```
+
+Équipes : numéro → libellé libre et rang à atteindre en fin de poule. Joueurs : nom (tel qu'affiché sur la page) ou licence → classement visé par tableau. Un nom mal écrit ou un fichier invalide est signalé sur la page.
+
 ## 📅 Calendriers des interclubs
 
 À ajouter à son agenda (Google Agenda : « Autres agendas » → « À partir de l'URL », pour une mise à jour automatique) : [toutes les équipes](https://clementmirabel.github.io/PointsICGAB/calendrier-interclubs.ics), ou une équipe : `https://clementmirabel.github.io/PointsICGAB/calendrier-equipe-N.ics` (N de 1 à 6).

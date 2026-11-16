@@ -22,6 +22,7 @@ on:
       - "web/**"
       - "requirements.txt"
       - "tests/**"
+      - "objectifs.json"
       - ".github/workflows/weekly-export.yml"
       - ".github/actions/**"
   workflow_dispatch:
