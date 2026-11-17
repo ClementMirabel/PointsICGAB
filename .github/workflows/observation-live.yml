@@ -1,0 +1,61 @@
+name: Observation live (icbad)
+
+# Relevé des feuilles de rencontre icbad toutes les 10 minutes les samedis et
+# dimanches, pour savoir si elles sont saisies au fil de la journée (onglet
+# « Live » envisageable) ou en une fois le soir. Chaque passage ajoute un
+# instantané par rencontre du jour à observation_live.jsonl (branche
+# "donnees") ; s'il n'y a pas de rencontre, rien n'est écrit.
+# Heures en UTC : 8h-21h = 9h-22h à Paris en hiver. GitHub peut retarder les
+# déclenchements programmés de plusieurs minutes.
+on:
+  schedule:
+    - cron: "*/10 8-21 * * 6,0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: observation-live
+  cancel-in-progress: false
+
+jobs:
+  releve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Fetch data branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --branch donnees \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$RUNNER_TEMP/donnees"
+
+      - name: Record today's ties
+        run: python observation_live.py --fichier "$RUNNER_TEMP/donnees/observation_live.jsonl"
+
+      # push simple ; si l'export hebdomadaire a poussé entre-temps, on rejoue
+      # l'ajout sur la nouvelle version de la branche (jamais de push forcé)
+      - name: Save to the data branch
+        run: |
+          cd "$RUNNER_TEMP/donnees"
+          [ -f observation_live.jsonl ] || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add observation_live.jsonl
+          if git diff --cached --quiet; then echo "rien de nouveau"; exit 0; fi
+          git commit --quiet -m "Observation live $(date -u +%Y-%m-%dT%H:%MZ)"
+          for essai in 1 2 3; do
+            git push --quiet origin donnees && exit 0
+            git pull --quiet --rebase origin donnees
+          done
+          exit 1

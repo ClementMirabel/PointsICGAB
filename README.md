@@ -89,6 +89,10 @@ Données conservées entre deux runs :
 | `statsJoueurs.json.gz` | branche `donnees` | dump du dernier export complet, utilisé par les régénérations |
 | `statsJoueurs_precedent.json` | branche `donnees` | résumé auquel ce dump a été comparé : une régénération garde les mêmes écarts dans l'Aperçu |
 
+### Observation des week-ends d'interclubs
+
+Le workflow [`observation-live.yml`](.github/workflows/observation-live.yml) relève toutes les 10 minutes, les samedis et dimanches de 9 h à 22 h, l'état des feuilles icbad des rencontres du jour (`observation_live.py` : statut, score, matchs saisis) dans `observation_live.jsonl` sur la branche `donnees`. But : savoir si les feuilles sont saisies au fil de la journée avant de construire un onglet « Live ». Rien n'est écrit les jours sans rencontre ; à désactiver (Actions → workflow → « Disable workflow ») une fois la question tranchée.
+
 ### Tests et alertes
 
 - `python -m unittest discover -s tests -t .` : règles de calcul et parcours de la page dans Chrome, sur des données **entièrement fictives** (`tests/donnees_fictives.py`). Lancés à chaque push (workflow `tests.yml`) et avant chaque export ou régénération, qui s'arrête si un test échoue.
