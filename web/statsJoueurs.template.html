@@ -198,6 +198,10 @@ abbr.jeune { text-decoration: none; display: inline-block; font-size: 10px; font
 .etat.neutre { background: var(--surface-2); color: var(--ink-2); }
 .jauge { display: inline-block; width: 70px; height: 7px; border-radius: 4px; background: var(--grid); vertical-align: middle; overflow: hidden; }
 .jauge i { display: block; height: 100%; background: var(--good); }
+.serie { transition: opacity .12s; }
+.leg-btn { all: unset; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 4px; padding: 1px 4px; }
+.leg-btn[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+.leg-btn:focus-visible { outline: 2px solid var(--s); }
 .subnav .coche { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 .subnav .coche input { accent-color: var(--we); width: 15px; height: 15px; }
 table.t tfoot td { border-top: 2px solid var(--axis); border-bottom: 0; font-weight: 600; }
@@ -1028,18 +1032,19 @@ function multiLines(el, cats, series, { height = 200, catFmt = c => c } = {}) {
   const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 8, t: 12, b: 26 };
   let y0 = Math.max(0, Math.floor((Math.min(...vals) - 3) / 5) * 5), y1 = Math.min(100, Math.ceil((Math.max(...vals) + 3) / 5) * 5);
   if (y1 - y0 < 10) { y0 = Math.max(0, y0 - 5); y1 = Math.min(100, y0 + 10); }
-  const pas = [5, 10, 20, 25].find(p => (y1 - y0) / p <= 4) || 25;
+  const pas = [5, 10, 20, 25].find(p => (y1 - y0) / p <= 5) || 25;
   const gw = (W - m.l - m.r) / cats.length, X = i => m.l + gw * i + gw / 2, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * (H - m.t - m.b);
   let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="% de victoire par mois">`;
   for (let v = Math.ceil(y0 / pas) * pas; v <= y1; v += pas) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/><text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" class="num">${v} %</text>`;
   for (const s of series) {
     const pts = s.values.map((b, i) => b && b.joues ? [X(i), Y(b.pct), b, i] : null).filter(Boolean);
-    if (pts.length > 1) svg += `<path d="${pts.map((p, k) => `${k ? "L" : "M"}${p[0]},${p[1]}`).join("")}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
-    for (const [x, y, b, i] of pts) svg += `<g><title>${esc(s.label)} · ${esc(catFmt(cats[i]))} : ${pct(b.pct)} de victoires (${b.victoires} V / ${b.joues} matchs)</title>
-      <circle cx="${x}" cy="${y}" r="9" fill="transparent"/><circle cx="${x}" cy="${y}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/></g>`;
+    const k = series.indexOf(s), chemin = pts.map((p, n) => `${n ? "L" : "M"}${p[0]},${p[1]}`).join("");
+    if (pts.length > 1) svg += `<g class="serie" data-s="${k}"><path d="${chemin}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>
+      <path d="${chemin}" fill="none" stroke="transparent" stroke-width="12"/></g>`;
+    for (const [x, y, , i] of pts) svg += `<g class="serie" data-s="${k}" data-i="${i}"><circle cx="${x}" cy="${y}" r="7" fill="transparent"/><circle cx="${x}" cy="${y}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/></g>`;
   }
   cats.forEach((c, i) => { svg += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${esc(catFmt(c))}</text>`; });
-  el.innerHTML = svg + "</svg>";
+  el.innerHTML = svg + `</svg><div class="tip"></div>`;
 }
 
 /* barres groupées : séries côte à côte dans chaque catégorie (2px entre les barres,
@@ -1060,12 +1065,43 @@ function groupedBars(el, cats, series, { height = 230, catFmt = c => c, mode = "
       const b = s.values[i]; if (!b || !b.joues) return;
       const x = x0 + k * (bw + 2), y = Y(val(b)), h = y0 - y, r = Math.min(4, bw / 2, h);
       const d = h <= 0 ? "" : `M${x},${y0} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${y0} Z`;
-      svg += `<g><title>${esc(s.label)} · ${esc(catFmt(c))} : ${b.joues} matchs, ${pct(b.pct)} de victoires (${b.victoires} V)</title>
-        <rect x="${x - 1}" y="${m.t}" width="${bw + 2}" height="${y0 - m.t}" fill="transparent"/>${d ? `<path d="${d}" fill="${s.color}"/>` : ""}</g>`;
+      svg += `<g class="serie" data-s="${k}" data-i="${i}"><rect x="${x - 1}" y="${m.t}" width="${bw + 2}" height="${y0 - m.t}" fill="transparent"/>${d ? `<path d="${d}" fill="${s.color}"/>` : ""}</g>`;
     });
     svg += `<text x="${m.l + gw * i + gw / 2}" y="${H - 6}" text-anchor="middle">${esc(catFmt(c))}</text>`;
   });
-  el.innerHTML = svg + "</svg>";
+  el.innerHTML = svg + `</svg><div class="tip"></div>`;
+}
+
+/* survol commun à plusieurs graphiques des mêmes séries (barres groupées, courbes,
+   légende) : la série survolée reste à 100 %, les autres passent à 50 %, et une
+   infobulle donne la valeur du point (mois) survolé. */
+function survolSeries(els, legende, series, cats, catFmt) {
+  const marques = () => els.flatMap(el => [...el.querySelectorAll(".serie[data-s]")]).concat([...legende.querySelectorAll("[data-s]")]);
+  const surligner = k => marques().forEach(n => { n.style.opacity = k == null || +n.dataset.s === k ? 1 : 0.5; });
+  const cacher = () => els.forEach(el => { const t = el.querySelector(".tip"); if (t) t.style.display = "none"; });
+  for (const el of els) {
+    const tip = el.querySelector(".tip");
+    el.querySelectorAll(".serie[data-s]").forEach(n => {
+      n.addEventListener("pointerenter", ev => {
+        const k = +n.dataset.s, s = series[k];
+        surligner(k);
+        if (n.dataset.i == null || !tip) return;
+        const i = +n.dataset.i, b = s.values[i];
+        tip.innerHTML = `<div class="h">${esc(catFmt(cats[i]))}</div><div class="r"><span><i style="background:${s.color}"></i>${esc(s.label)}</span></div>
+          <div class="r"><span>% de victoire</span><b class="num">${pct(b.pct)}</b></div>
+          <div class="r"><span>Victoires / matchs</span><b class="num">${b.victoires} / ${b.joues}</b></div>`;
+        tip.style.display = "block";
+        const box = el.getBoundingClientRect(), r = n.getBoundingClientRect();
+        tip.style.left = Math.max(0, Math.min(r.left - box.left + r.width / 2 + 10, el.clientWidth - tip.offsetWidth - 4)) + "px";
+        tip.style.top = Math.max(0, r.top - box.top - 10) + "px";
+      });
+      n.addEventListener("pointerleave", () => { surligner(null); cacher(); });
+    });
+  }
+  legende.querySelectorAll("[data-s]").forEach(n => {
+    n.addEventListener("pointerenter", () => surligner(+n.dataset.s));
+    n.addEventListener("pointerleave", () => surligner(null));
+  });
 }
 
 
@@ -1430,10 +1466,24 @@ function clubCategories(el) {
     $("#catMois").innerHTML = GROUPES_MOIS.map(([k, l]) => `<button class="chip" data-c="${k}" aria-pressed="${g[0] === k}">${l}</button>`).join("");
     const series = g[2].map(([cle, couleur, label]) => ({ cat: cats.find(r => r.categorie === cle), couleur, label: label || catLabel(cle) })).filter(x => x.cat);
     const moisL = [...new Set(series.flatMap(x => Object.keys(x.cat.par_mois)))].sort();
-    $("#legMois").innerHTML = series.length > 1 ? series.map(x => `<span><i class="box" style="background:${x.couleur}"></i>${esc(x.label)}</span>`).join("") : "";
-    const donnees = series.map(x => ({ label: x.label, color: x.couleur, values: moisL.map(m => x.cat.par_mois[m] || null) }));
+    // légende cliquable : masquer / réafficher une série (mémorisé par regroupement) ;
+    // chaque série garde sa couleur, l'échelle se recale sur les séries affichées
+    const masques = new Set((state.moisMasques = state.moisMasques || {})[g[0]] || []);
+    const visibles = series.filter(x => !masques.has(x.label));
+    $("#legMois").innerHTML = series.length > 1 ? series.map(x => { const on = !masques.has(x.label), k = visibles.indexOf(x);
+      return `<button type="button" class="leg-btn" data-lab="${esc(x.label)}" ${on ? `data-s="${k}"` : ""} aria-pressed="${on}" title="${on ? "Masquer" : "Afficher"} ${esc(x.label)}"><i class="box" style="background:${on ? x.couleur : "var(--grid)"}"></i>${esc(x.label)}</button>`; }).join("")
+      + `<span class="muted small">cliquer pour masquer / afficher</span>` : "";
+    $("#legMois").onclick = ev => {
+      const b = ev.target.closest("[data-lab]"); if (!b) return;
+      const lab = b.dataset.lab;
+      if (masques.has(lab)) masques.delete(lab); else if (visibles.length > 1) masques.add(lab);
+      state.moisMasques[g[0]] = [...masques];
+      drawMois();
+    };
+    const donnees = visibles.map(x => ({ label: x.label, color: x.couleur, values: moisL.map(m => x.cat.par_mois[m] || null) }));
     groupedBars($("#cMoisN"), moisL, donnees, { catFmt: fMois, mode: "matchs", height: 170 });
     multiLines($("#cMois"), moisL, donnees, { catFmt: fMois });
+    survolSeries([$("#cMoisN"), $("#cMois")], $("#legMois"), donnees, moisL, fMois);
     sortableTable($("#tMois"), "catMoisT", [
       { k: "mois", label: "Mois", val: r => r, html: r => fMois(r) },
       ...series.map((x, i) => ({ k: "s" + i, label: x.label, val: r => x.cat.par_mois[r]?.pct ?? null, num: true,
