@@ -82,6 +82,15 @@ class TestRegles(unittest.TestCase):
         self.assertEqual(historique_ic.cotes_j10(h, "2026-11-28")[0], "2026-11-26T01:05Z")
         self.assertIsNone(historique_ic.cotes_j10(h, "2026-12-19"))
 
+    # --- fiches complètes : R6 ou mieux, P10 ou mieux pour les jeunes
+    def test_eligibilite_scraping(self):
+        import statsJoueurs
+        self.assertTrue(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "R6", "Categorie": "Senior"}))
+        self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "D7", "Categorie": "Senior"}))
+        self.assertTrue(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "P10", "Categorie": "Minime 2"}))
+        self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "P11", "Categorie": "Cadet 1"}))
+        self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": None}))
+
     # --- pronostics
     def test_logistique(self):
         # données construites : plus l'écart est grand, plus on gagne

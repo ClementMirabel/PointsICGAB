@@ -198,6 +198,8 @@ abbr.jeune { text-decoration: none; display: inline-block; font-size: 10px; font
 .etat.neutre { background: var(--surface-2); color: var(--ink-2); }
 .jauge { display: inline-block; width: 70px; height: 7px; border-radius: 4px; background: var(--grid); vertical-align: middle; overflow: hidden; }
 .jauge i { display: block; height: 100%; background: var(--good); }
+.subnav .coche { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.subnav .coche input { accent-color: var(--we); width: 15px; height: 15px; }
 table.t tfoot td { border-top: 2px solid var(--axis); border-bottom: 0; font-weight: 600; }
 /* planificateur */
 /* colonnes fixées par le nombre d'équipes du week-end (voir colsPlan) : 6 -> 2 lignes de 3 */
@@ -338,7 +340,8 @@ const rankBadge = (t, c) => `<span class="rank">${TL[t]} <b style="background:${
 
 /* ---------- état + navigation */
 const byLicence = new Map(DATA.joueurs.map(j => [j.licence, j]));
-const state = { sexe: "tous", q: "", matchFiltre: { tableau: "tous", type: "tous" }, courbeMode: "diff" };
+const state = { sexe: "tous", q: "", matchFiltre: { tableau: "tous", type: "tous" }, courbeMode: "diff",
+  jeunesSeuls: (() => { try { return !!localStorage.getItem("jeunesSeuls"); } catch (e) { return false; } })() };
 
 function route() {
   const h = decodeURIComponent(location.hash.slice(1));
@@ -920,7 +923,15 @@ const CAT_LABEL = { "H (tous tableaux)": "Hommes (tous tableaux)", "F (tous tabl
   "S (unisexe)": "Simple (H + F)", "D (unisexe)": "Double (H + F)", "Club (tous tableaux)": "Club" };
 const catLabel = c => CAT_LABEL[c] || c;
 const catRowClass = r => r.categorie === "Club (tous tableaux)" ? "total" : ["H (tous tableaux)", "S (unisexe)"].includes(r.categorie) ? "sep" : "";
-Object.assign(state, { clubOnglet: "Overall", overallSexe: "tous", profilTableau: "Tous", catMois: "Club (tous tableaux)" });
+Object.assign(state, { clubOnglet: "Overall", overallSexe: "tous", profilTableau: "Tous", groupeMois: "tableaux" });
+/* groupes de barres du graphique par mois : [clé, libellé, [[catégorie, couleur, libellé ?]]]
+   couleurs : palette catégorielle dans l'ordre fixe (bleu, orange, aqua, jaune, magenta) */
+const GROUPES_MOIS = [
+  ["tableaux", "5 tableaux", [["SH", "var(--s)"], ["SD", "var(--d)"], ["DH", "var(--m)"], ["DD", "var(--ic)"], ["MX", "var(--so)"]]],
+  ["genre", "Genre", [["H (tous tableaux)", "var(--s)", "Hommes"], ["F (tous tableaux)", "var(--d)", "Femmes"]]],
+  ["sd", "Simple vs double", [["S (unisexe)", "var(--s)", "Simple"], ["D (unisexe)", "var(--d)", "Double"], ["MX", "var(--m)", "Mixte"]]],
+  ["club", "Club", [["Club (tous tableaux)", "var(--club)", "Club"]]],
+];
 
 function renderClub(sous, reste = []) {
   // pages de détail rattachées à une sous-page (onglet surligné)
@@ -928,7 +939,13 @@ function renderClub(sous, reste = []) {
   if (!parent && !SOUS_PAGES.some(([k]) => k === sous)) sous = "apercu";
   const actif = parent || sous;
   $("#main").innerHTML = `<nav class="chips subnav">${SOUS_PAGES.map(([k, l]) =>
-    `<a class="chip ${k === actif ? "on" : ""}" href="#club/${k}" ${k === actif ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav><div id="club"></div>`;
+    `<a class="chip ${k === actif ? "on" : ""}" href="#club/${k}" ${k === actif ? 'aria-current="page"' : ""}>${l}</a>`).join("")}
+    ${AVEC_CATEGORIES ? `<label class="coche" title="Classement, profil de jeu et suivi : seulement les jeunes (Minibad à Junior)"><input type="checkbox" id="jeunesSeuls" ${state.jeunesSeuls ? "checked" : ""}> Jeunes uniquement</label>` : ""}</nav><div id="club"></div>`;
+  $("#jeunesSeuls")?.addEventListener("change", e => {
+    state.jeunesSeuls = e.target.checked;
+    try { localStorage.setItem("jeunesSeuls", state.jeunesSeuls ? "1" : ""); } catch (err) {}
+    route();
+  });
   if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1], reste[2]);
   if (sous === "tournoi") return clubTournoi($("#club"), reste[0]);
   ({ apercu: clubApercu, classement: clubClassement, competitions: clubCompetitions,
@@ -1002,32 +1019,29 @@ function clubApercu(el) {
     color: j.global.diff_cote >= 0 ? "var(--good)" : "var(--bad)", href: "#joueur/" + j.licence })));
 }
 
-/* courbe simple sur des catégories (mois) : une série, points survolables -
-   alignée sous un histogramme de mêmes catégories (pas de double échelle) */
-function lineCats(el, cats, values, { height = 150, yFmt = v => pct(v), y0 = null, y1 = null, color = "var(--club)", catFmt = c => c } = {}) {
-  const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 10, t: 14, b: 26 };
-  // échelle resserrée sur les valeurs (multiples de 5, dans 0-100) : sur 0-100
-  // les variations d'un mois à l'autre étaient invisibles
-  const vs = values.filter(v => v != null);
-  if (y0 == null) y0 = vs.length ? Math.max(0, Math.floor((Math.min(...vs) - 3) / 5) * 5) : 0;
-  if (y1 == null) y1 = vs.length ? Math.min(100, Math.ceil((Math.max(...vs) + 3) / 5) * 5) : 100;
-  if (y1 - y0 < 10) { y0 = Math.max(0, y0 - 5); y1 = Math.min(100, y0 + 10); }
-  const pas = [5, 10, 20, 25].find(p => (y1 - y0) / p <= 4) || 25;
-  const graduations = [];
-  for (let v = Math.ceil(y0 / pas) * pas; v <= y1; v += pas) graduations.push(v);
-  const bw = (W - m.l - m.r) / cats.length;
-  const X = i => m.l + bw * i + bw / 2, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * (H - m.t - m.b);
-  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img">`;
-  for (const v of graduations) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/>
-    <text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" class="num">${v} %</text>`;
-  const pts = values.map((v, i) => v == null ? null : [X(i), Y(v), v]).filter(Boolean);
-  if (pts.length > 1) svg += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join("")}" fill="none" stroke="${color}" stroke-width="2"/>`;
-  pts.forEach((p, i) => { svg += `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${color}" stroke="var(--surface)" stroke-width="2"><title>${yFmt(p[2])}</title></circle>`; });
-  const last = pts[pts.length - 1];
-  if (last) svg += `<text x="${last[0]}" y="${last[1] - 9}" text-anchor="middle" class="lbl num">${yFmt(last[2])}</text>`;
-  cats.forEach((c, i) => { svg += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${esc(catFmt(c))}</text>`; });
+/* barres groupées de % (0-100) : séries côte à côte dans chaque catégorie, 2px entre
+   les barres, extrémité arrondie, barres pâles sous 5 matchs ; values[i] = {pct, victoires, joues} */
+function groupedBars(el, cats, series, { height = 230, catFmt = c => c } = {}) {
+  if (!cats.length) { el.innerHTML = `<div class="empty">Aucun match.</div>`; return; }
+  const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 8, t: 10, b: 26 };
+  const gw = (W - m.l - m.r) / cats.length, inner = Math.min(gw * 0.78, series.length * 26), bw = Math.max(3, (inner - 2 * (series.length - 1)) / series.length);
+  const Y = v => m.t + (1 - v / 100) * (H - m.t - m.b), y0 = Y(0);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="% de victoire par mois">`;
+  for (const v of [0, 25, 50, 75, 100]) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/><text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" class="num">${v} %</text>`;
+  cats.forEach((c, i) => {
+    const x0 = m.l + gw * i + (gw - inner) / 2;
+    series.forEach((s, k) => {
+      const b = s.values[i]; if (!b || !b.joues) return;
+      const x = x0 + k * (bw + 2), y = Y(b.pct), h = y0 - y, r = Math.min(4, bw / 2, h);
+      const d = h <= 0 ? "" : `M${x},${y0} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${y0} Z`;
+      svg += `<g><title>${esc(s.label)} · ${esc(catFmt(c))} : ${pct(b.pct)} (${b.victoires} V / ${b.joues} matchs)</title>
+        <rect x="${x - 1}" y="${m.t}" width="${bw + 2}" height="${y0 - m.t}" fill="transparent"/>${d ? `<path d="${d}" fill="${s.color}" opacity="${b.joues < 5 ? 0.35 : 1}"/>` : ""}</g>`;
+    });
+    svg += `<text x="${m.l + gw * i + gw / 2}" y="${H - 6}" text-anchor="middle">${esc(catFmt(c))}</text>`;
+  });
   el.innerHTML = svg + "</svg>";
 }
+
 
 /* -- listes détaillées derrière les chiffres de Stats club */
 const DETAILS = {
@@ -1205,7 +1219,7 @@ function clubClassement(el) {
 
 function drawClassement() {
   const overall = state.clubOnglet === "Overall";
-  $("#sexeOverall").innerHTML = overall ? (AVEC_CATEGORIES ? FILTRES_PUBLIC : FILTRES_PUBLIC.slice(0, 3)).map(([k, l]) =>
+  $("#sexeOverall").innerHTML = overall ? FILTRES_PUBLIC.map(([k, l]) =>
     `<button class="chip" data-s="${k}" aria-pressed="${state.overallSexe === k}">${l}</button>`).join("") : "";
   $("#sexeOverall").onclick = e => { const b = e.target.closest("[data-s]"); if (!b) return; state.overallSexe = b.dataset.s; drawClassement(); };
   const forme = [["forme", "Forme", "Indice forme : rang /100 (50 = médiane)"], ["perf", "Perf.", "Taux de victoire lissé, en rang"],
@@ -1226,7 +1240,7 @@ function drawClassement() {
     ];
   } else {
     const [t, sexe] = ONGLETS[state.clubOnglet];
-    rows = DATA.joueurs.filter(j => (!sexe || j.sexe === sexe) && j.tableaux[t].matchs > 0).map(j => ({ j, x: j.tableaux[t] }));
+    rows = DATA.joueurs.filter(j => (!sexe || j.sexe === sexe) && j.tableaux[t].matchs > 0 && jeuneOk(j.licence, j.nom)).map(j => ({ j, x: j.tableaux[t] }));
     cols = [
       { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) + badgeJeune(r.j.licence, r.j.nom) },
       { k: "clt", label: "Clt", val: r => r.x.cote, html: r => `<b class="rk" style="background:${rankColor(r.x.classement)}">${esc(r.x.classement || "NC")}</b>` },
@@ -1339,9 +1353,9 @@ function clubCategories(el) {
     <section style="margin-top:8px"><h2>Dynamique de match</h2><p class="hint">Matchs d'au moins 2 sets, forfaits exclus. Propre : victoires sans perdre un set. Après 1er set gagné : capacité à conclure. Comeback : victoires après avoir perdu le 1er set.</p><div class="card scroll" id="tDyn"></div></section>
     <section><h2>David contre Goliath</h2><p class="hint">Outsider : l'adversaire avait une meilleure cote. Favori : c'est nous. Forfaits exclus.</p><div class="card scroll" id="tDvg"></div></section>
     <section><h2>Sets serrés</h2><p class="hint">Sets terminés à 2 points d'écart ou moins. Diff = % sets serrés gagnés − % de tous les sets gagnés.</p><div class="card scroll" id="tClutch"></div></section>
-    <section><h2>Par mois</h2><div class="chips" id="catMois" style="margin-bottom:10px"></div>
-      <div class="card" style="margin-bottom:12px"><div class="legend"><span><i class="box" style="background:var(--good)"></i>Victoires</span><span><i class="box" style="background:var(--bad)"></i>Défaites</span></div>
-        <div class="chart" id="cMoisVD"></div><div class="small muted" style="margin:10px 0 2px">% de victoire</div><div class="chart" id="cMoisPct"></div></div>
+    <section><h2>% de victoire par mois</h2><p class="hint">Chaque match du club compté une fois. Barres pâles : moins de 5 matchs dans le mois. Survoler une barre pour le détail.</p>
+      <div class="chips" id="catMois" style="margin-bottom:10px"></div>
+      <div class="card" style="margin-bottom:12px"><div class="legend" id="legMois"></div><div class="chart" id="cMois"></div></div>
       <div class="card scroll" id="tMois"></div></section>`;
   const equipes = (IC?.equipes || []).map(e => {
     const ms = icMatchs(e), lics = new Set(ms.flatMap(m => m.club.map(p => p.licence)).filter(Boolean));
@@ -1384,23 +1398,19 @@ function clubCategories(el) {
     { ...c("delta_clutch"), label: "Diff", html: r => sgn(r.delta_clutch) },
   ]), cats, { ...opt, defaut: { cle: "categorie", sens: 1 } });
   const drawMois = () => {
-    $("#catMois").innerHTML = cats.map(r => `<button class="chip" data-c="${esc(r.categorie)}" aria-pressed="${state.catMois === r.categorie}">${esc(catLabel(r.categorie))}</button>`).join("");
-    const cat = cats.find(r => r.categorie === state.catMois) || cats[cats.length - 1];
-    const rows = Object.entries(cat.par_mois).map(([mois, b]) => ({ mois, ...b }));
-    const moisL = rows.map(r => r.mois);
-    stackedBars($("#cMoisVD"), moisL, [
-      { key: "v", label: "Victoires", color: "var(--good)", values: rows.map(r => r.victoires) },
-      { key: "d", label: "Défaites", color: "var(--bad)", values: rows.map(r => r.joues - r.victoires) }],
-      { height: 200, catFmt: fMois, tipExtra: i => `<div class="r"><span>% victoire</span><b class="num">${pct(rows[i].pct)}</b></div>` });
-    lineCats($("#cMoisPct"), moisL, rows.map(r => r.pct), { catFmt: fMois });
+    const g = GROUPES_MOIS.find(x => x[0] === state.groupeMois) || GROUPES_MOIS[0];
+    $("#catMois").innerHTML = GROUPES_MOIS.map(([k, l]) => `<button class="chip" data-c="${k}" aria-pressed="${g[0] === k}">${l}</button>`).join("");
+    const series = g[2].map(([cle, couleur, label]) => ({ cat: cats.find(r => r.categorie === cle), couleur, label: label || catLabel(cle) })).filter(x => x.cat);
+    const moisL = [...new Set(series.flatMap(x => Object.keys(x.cat.par_mois)))].sort();
+    $("#legMois").innerHTML = series.length > 1 ? series.map(x => `<span><i class="box" style="background:${x.couleur}"></i>${esc(x.label)}</span>`).join("") : "";
+    groupedBars($("#cMois"), moisL, series.map(x => ({ label: x.label, color: x.couleur, values: moisL.map(m => x.cat.par_mois[m] || null) })), { catFmt: fMois });
     sortableTable($("#tMois"), "catMoisT", [
-      { k: "mois", label: "Mois", val: r => r.mois, html: r => fMois(r.mois) },
-      { k: "joues", label: "Matchs", val: r => r.joues, num: true },
-      { k: "victoires", label: "Victoires", val: r => r.victoires, num: true },
-      { k: "pct", label: "% vict.", val: r => r.pct, html: r => pct(r.pct), num: true },
-    ], rows, { defaut: { cle: "mois", sens: 1 } });
+      { k: "mois", label: "Mois", val: r => r, html: r => fMois(r) },
+      ...series.map((x, i) => ({ k: "s" + i, label: x.label, val: r => x.cat.par_mois[r]?.pct ?? null, num: true,
+        html: r => { const b = x.cat.par_mois[r]; return b ? `${pct(b.pct)} <span class="muted small">(${b.victoires}/${b.joues})</span>` : "–"; } })),
+    ], moisL, { defaut: { cle: "mois", sens: 1 } });
   };
-  $("#catMois").onclick = e => { const b = e.target.closest("[data-c]"); if (!b) return; state.catMois = b.dataset.c; drawMois(); };
+  $("#catMois").onclick = e => { const b = e.target.closest("[data-c]"); if (!b) return; state.groupeMois = b.dataset.c; drawMois(); };
   drawMois();
 }
 
@@ -1434,9 +1444,9 @@ function clubProfil(el) {
       + T.map(x => `<button class="chip" data-t="${x}" aria-pressed="${x === t}"><span class="sw" style="background:${TC[x]}"></span>${x}</button>`).join("");
     // "Tous" : agrégat des 3 tableaux (j.global), même forme que j.tableaux[t]
     const src = j => t === "Tous" ? j.global : j.tableaux[t];
-    const rows = DATA.joueurs.filter(j => src(j).matchs > 0).map(j => ({ j, x: src(j), p: src(j).profil_score }));
+    const rows = DATA.joueurs.filter(j => src(j).matchs > 0 && jeuneOk(j.licence, j.nom)).map(j => ({ j, x: src(j), p: src(j).profil_score }));
     sortableTable($("#tProfil"), "profil", [
-      { k: "nom", label: "Joueur", val: r => r.j.nom },
+      { k: "nom", label: "Joueur", val: r => r.j.nom, html: r => esc(r.j.nom) + badgeJeune(r.j.licence, r.j.nom) },
       { k: "m", label: "Matchs", val: r => r.x.matchs, num: true },
       { k: "moi", label: "Score moyen", val: r => r.p.score_moyen_mien, html: r => `${fmt(r.p.score_moyen_mien, 1)} <span class="muted">– ${fmt(r.p.score_moyen_adverse, 1)}</span>`, num: true },
       { k: "pv", label: "Pts en victoire", val: r => r.p.points_moyens_victoire, nd: 1, num: true, sm: true },
@@ -1573,7 +1583,7 @@ function renderJoueurIC(x) {
     <div class="card hero">
       <div class="who"><h2>${esc(x.nom)}${badgeJeune(x.licence, x.nom)}</h2>
         <div class="badges">${T.map((t, i) => rankBadge(t, (x.classements[i] || {}).classement)).join("")}</div>
-        <div class="small muted" style="margin-top:8px">Fiche interclubs : la fiche complète (résultats de la saison, cote, indices) n'est générée que pour les joueurs classés R6 ou mieux dont le profil myffbad est public.
+        <div class="small muted" style="margin-top:8px">Fiche interclubs : la fiche complète (résultats de la saison, cote, indices) n'est générée que pour les joueurs classés R6 ou mieux (P10 ou mieux pour les jeunes) dont le profil myffbad est public.
           · <a href="https://myffbad.fr/joueur/${esc(x.licence)}" target="_blank" rel="noopener">profil myffbad</a></div></div>
       <div class="stat"><div class="v num">${b.j}</div><div class="l">matchs d'interclub</div></div>
       <div class="stat"><div class="v num">${pct(b.pct)}</div><div class="l">de victoires (${b.v} V – ${b.j - b.v} D)</div></div>
@@ -2657,10 +2667,12 @@ function badgeJeune(licence, nom) {
   return u ? ` <abbr class="jeune" title="Jeune : ${esc(c)} (${u})">${u}</abbr>` : "";
 }
 /* filtre Tous / Hommes / Femmes / Jeunes (chips) */
-const FILTRES_PUBLIC = [["tous", "Tous"], ["H", "Hommes"], ["F", "Femmes"], ["J", "Jeunes"]];
-const filtrePublic = (k, licence, nom, sexe) => k === "tous" || (k === "J" ? estJeune(licence, nom) : sexe === k);
+const FILTRES_PUBLIC = [["tous", "Tous"], ["H", "Hommes"], ["F", "Femmes"]];
+/* case "Jeunes uniquement" des pages Club (mémorisée dans le navigateur) */
+const jeuneOk = (licence, nom) => !state.jeunesSeuls || estJeune(licence, nom);
+const filtrePublic = (k, licence, nom, sexe) => (k === "tous" || sexe === k) && jeuneOk(licence, nom);
 function chipsPublic(el, cle, apres) {
-  const choix = AVEC_CATEGORIES ? FILTRES_PUBLIC : FILTRES_PUBLIC.slice(0, 3);
+  const choix = FILTRES_PUBLIC;
   el.innerHTML = choix.map(([k, l]) => `<button class="chip" data-p="${k}" aria-pressed="${state[cle] === k}">${l}</button>`).join("");
   el.onclick = e => { const b = e.target.closest("[data-p]"); if (!b) return; state[cle] = b.dataset.p; chipsPublic(el, cle, apres); apres(); };
 }
@@ -2707,12 +2719,12 @@ function clubSuivi(el) {
       <div class="card scroll" id="suiviProg"></div></section>
     <section><h2>Proches du classement supérieur</h2>
       <p class="hint">Estimation : pour chaque tableau et chaque sexe, le seuil du classement supérieur est approché par la cote la plus basse d'un joueur du club qui l'a déjà.
-        Le vrai seuil est au plus à ce niveau : « au plus 40 pts » veut dire qu'il manque 40 points ou moins. Tout l'effectif, joueurs à moins de 8 % du seuil.</p>
+        Le vrai seuil est au plus à ce niveau : « au plus 40 pts » veut dire qu'il manque 40 points ou moins. Joueurs avec une fiche complète, à moins de 8 % du seuil.</p>
       <div class="chips" id="procheFiltre" style="margin-bottom:10px"></div>
       <div class="card scroll" id="suiviProches"></div></section>
     ${sectionJeunesSuivi()}
     <section><h2>Sans match récent</h2>
-      <p class="hint">Dernier match connu (tournois et interclubs pour les joueurs avec une fiche complète, feuilles d'interclubs pour les autres). Les joueurs sans aucun match cette saison n'apparaissent que s'ils ont une fiche complète.</p>
+      <p class="hint">Dernier match connu (tournois et interclubs), joueurs avec une fiche complète.</p>
       <div class="chips" id="inactifFiltre" style="margin-bottom:10px"></div>
       <div class="card scroll" id="suiviInactifs"></div></section>`;
 
@@ -2753,7 +2765,7 @@ function clubSuivi(el) {
 
   // proches du classement supérieur : tout l'effectif, cotes actuelles
   const S = seuilsEstimes(), proches = [];
-  for (const p of EFF) for (let i = 0; i < 3; i++) {
+  for (const p of EFF.filter(x => ficheDe(x.licence, x.nom))) for (let i = 0; i < 3; i++) {
     const c = p.classements?.[i], v = p.cotes?.[i], r = rangClt(c);
     if (r < 0 || r === ORDRE_CLT.length - 1 || !v) continue;
     const suivant = ORDRE_CLT[r + 1], seuil = S[i + p.sexe]?.[suivant];
@@ -2777,11 +2789,7 @@ function clubSuivi(el) {
   // inactivité
   const candidats = new Map();
   for (const j of DATA.joueurs) candidats.set(j.licence, { licence: j.licence, nom: j.nom, sexe: j.sexe, best: j.global.meilleur_tableau, matchs: j.global.matchs });
-  for (const x of icJoueurs.values()) if (!ficheDe(x.licence, x.nom) && historiqueIC.has(x.licence)) {
-    const p = effParLic.get(x.licence);
-    candidats.set(x.licence, { licence: x.licence, nom: x.nom, sexe: x.sexe, best: p?.meilleur_tableau, matchs: matchsICDe(x.licence, x.nom).length, icSeul: true });
-  }
-  const inactifs = [...candidats.values()].map(x => { const d = dernierMatch(x.licence, x.nom); return { ...x, dernier: d, sem: d ? semainesDepuis(d) : null }; });
+  const inactifs = [...candidats.values()].filter(x => jeuneOk(x.licence, x.nom)).map(x => { const d = dernierMatch(x.licence, x.nom); return { ...x, dernier: d, sem: d ? semainesDepuis(d) : null }; });
   const drawInactifs = () => {
     $("#inactifFiltre").innerHTML = [4, 6, 10].map(n => `<button class="chip" data-n="${n}" aria-pressed="${state.inactifSem === n}">${n} semaines et plus</button>`).join("");
     sortableTable($("#suiviInactifs"), "suiviInactifs", [
@@ -3371,7 +3379,7 @@ const FIN_SAISON = () => `${+DATA.saison.slice(0, 4) + 1}-06-30`;
 function lignesJeunes() {
   const premier = DATA.instantanes?.premier, S = seuilsEstimes();
   const finSaison = FIN_SAISON(), semRestantes = Math.max(0, (d2(finSaison) - d2(AUJ)) / 864e5 / 7);
-  const rows = EFF.filter(p => estJeune(p.licence, p.nom)).map(p => {
+  const rows = EFF.filter(p => estJeune(p.licence, p.nom) && ficheDe(p.licence, p.nom)).map(p => {
     const cotes = p.cotes || [0, 0, 0], i = cotes.indexOf(Math.max(...cotes)), t = T[i], f = ficheDe(p.licence, p.nom);
     let delta = null, ref = null;
     if (f && f.tableaux[t].cote_sept != null) { delta = f.tableaux[t].diff_cote; ref = `${DATA.saison.slice(0, 4)}-09-01`; }
@@ -3390,7 +3398,7 @@ function lignesJeunes() {
 function sectionJeunesSuivi() {
   if (!AVEC_CATEGORIES) return "";
   return `<section><h2>Jeunes : progression et potentiel</h2>
-    <p class="hint">Tableau le mieux coté de chaque jeune. Progression depuis le 1er septembre (fiche complète) ou depuis le premier export enregistré (${DATA.instantanes?.premier ? fDate(DATA.instantanes.premier.cle.slice(0, 10)) : "pas encore disponible"}) ; rythme calculé dès 3 semaines de recul.
+    <p class="hint">Jeunes avec une fiche complète (classés P10 ou mieux), tableau le mieux coté de chacun. Progression depuis le 1er septembre ; rythme calculé dès 3 semaines de recul.
       Projection au 30 juin à rythme constant, classement projeté d'après les seuils estimés (voir plus haut). Indicatif : la progression d'un jeune est rarement linéaire.</p>
     <div class="chips" id="jeunesFiltre" style="margin-bottom:10px"></div>
     <div class="card scroll" id="suiviJeunes"></div></section>`;
@@ -3399,6 +3407,7 @@ function drawJeunesSuivi() {
   const el = $("#suiviJeunes"); if (!el) return;
   // par défaut, seulement les jeunes qui ont déjà des points (cote au-dessus du plancher de 400)
   const tous = lignesJeunes(), cotes = tous.filter(r => r.cote > 400);
+  if (!tous.length) { el.innerHTML = `<div class="empty">Aucun jeune avec une fiche complète dans cet export.</div>`; $("#jeunesFiltre").innerHTML = ""; return; }
   $("#jeunesFiltre").innerHTML = [[false, `Avec des points (${cotes.length})`], [true, `Tous les jeunes (${tous.length})`]]
     .map(([v, l]) => `<button class="chip" data-v="${v}" aria-pressed="${!!state.jeunesTous === v}">${l}</button>`).join("");
   $("#jeunesFiltre").onclick = e => { const b = e.target.closest("[data-v]"); if (!b) return; state.jeunesTous = b.dataset.v === "true"; drawJeunesSuivi(); };

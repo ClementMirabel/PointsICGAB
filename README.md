@@ -27,7 +27,7 @@ Statistiques des joueurs du Grenoble Alpes Badminton (GAB38), suivi des interclu
 - **Sauvegarde** : le plan est enregistré **dans le navigateur** de chacun ; il est conservé d'une semaine à l'autre mais n'est pas partagé. Pour l'échanger entre capitaines : « Exporter le plan », puis « Importer un plan » de l'autre côté.
 - **Export Excel** d'un week-end, au format du classeur « INTERCLUBS » (propositions d'équipe, valeurs, compositions).
 
-Les jeunes (Minibad à Junior, catégorie d'âge myffbad) portent un badge U9 à U19 partout où leur nom apparaît, et un filtre « Jeunes » existe dans le classement et le suivi.
+Les jeunes (Minibad à Junior, catégorie d'âge myffbad) portent un badge U9 à U19 partout où leur nom apparaît, et la case « Jeunes uniquement » des pages Club restreint le classement, le profil de jeu et le suivi aux jeunes.
 
 ## 📈 Préparation des joueurs
 
@@ -75,7 +75,7 @@ Export complet :
 1. `pointsIC.py` : roster public du club → `pointsIC.xlsx`.
 2. `statsJoueurs.py` :
    - roster du club (`roster.py`) et interclubs des équipes 1 à 6 (`icbad.py`, pages publiques) ;
-   - connexion à myffbad (Selenium) et récupération des résultats de la saison, de la cote et de l'historique de classement des joueurs classés R6 ou mieux, puis résultats seuls des autres joueurs d'interclubs (points de cote) ;
+   - connexion à myffbad (Selenium) et récupération des résultats de la saison, de la cote et de l'historique de classement des joueurs classés R6 ou mieux (P10 ou mieux pour les jeunes), puis résultats seuls des autres joueurs d'interclubs (points de cote) ;
    - calcul des stats (`stats.py`), de l'Excel (`export_excel.py`) et de la page (`export_web.py` + gabarit [`web/statsJoueurs.template.html`](web/statsJoueurs.template.html)) ;
    - valeurs des joueurs figées pour les week-ends d'interclubs terminés (`historique_ic.py`).
 3. Publication : la page sur **GitHub Pages**, les fichiers Excel dans la release `weekly-data` (remplacée seulement par un export complet réussi ; une régénération ne publie que la page).
