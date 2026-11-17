@@ -940,7 +940,7 @@ function renderClub(sous, reste = []) {
   const actif = parent || sous;
   $("#main").innerHTML = `<nav class="chips subnav">${SOUS_PAGES.map(([k, l]) =>
     `<a class="chip ${k === actif ? "on" : ""}" href="#club/${k}" ${k === actif ? 'aria-current="page"' : ""}>${l}</a>`).join("")}
-    ${AVEC_CATEGORIES ? `<label class="coche" title="Classement, profil de jeu et suivi : seulement les jeunes (Minibad à Junior)"><input type="checkbox" id="jeunesSeuls" ${state.jeunesSeuls ? "checked" : ""}> Jeunes uniquement</label>` : ""}</nav><div id="club"></div>`;
+    ${AVEC_CATEGORIES && ["classement", "profil", "suivi"].includes(actif) ? `<label class="coche" title="Classement, profil de jeu et suivi : seulement les jeunes (Minibad à Junior)"><input type="checkbox" id="jeunesSeuls" ${state.jeunesSeuls ? "checked" : ""}> Jeunes uniquement</label>` : ""}</nav><div id="club"></div>`;
   $("#jeunesSeuls")?.addEventListener("change", e => {
     state.jeunesSeuls = e.target.checked;
     try { localStorage.setItem("jeunesSeuls", state.jeunesSeuls ? "1" : ""); } catch (err) {}
@@ -1017,6 +1017,29 @@ function clubApercu(el) {
     tipExtra: i => `<div class="r"><span>% victoire</span><b class="num">${pct(vic[i])}</b></div>` });
   divergingBars($("#cProg"), sel.map(j => ({ label: j.nom, value: j.global.diff_cote,
     color: j.global.diff_cote >= 0 ? "var(--good)" : "var(--bad)", href: "#joueur/" + j.licence })));
+}
+
+/* courbes de % de victoire par catégorie (mois), une par série, alignées sous
+   groupedBars (mêmes marges, un point au centre de chaque groupe). Échelle
+   resserrée sur les valeurs (multiples de 5) pour voir les variations. */
+function multiLines(el, cats, series, { height = 200, catFmt = c => c } = {}) {
+  const vals = series.flatMap(s => s.values.filter(b => b && b.joues).map(b => b.pct));
+  if (!cats.length || !vals.length) { el.innerHTML = `<div class="empty">Aucun match.</div>`; return; }
+  const W = Math.max(320, el.clientWidth), H = height, m = { l: 40, r: 8, t: 12, b: 26 };
+  let y0 = Math.max(0, Math.floor((Math.min(...vals) - 3) / 5) * 5), y1 = Math.min(100, Math.ceil((Math.max(...vals) + 3) / 5) * 5);
+  if (y1 - y0 < 10) { y0 = Math.max(0, y0 - 5); y1 = Math.min(100, y0 + 10); }
+  const pas = [5, 10, 20, 25].find(p => (y1 - y0) / p <= 4) || 25;
+  const gw = (W - m.l - m.r) / cats.length, X = i => m.l + gw * i + gw / 2, Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * (H - m.t - m.b);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="% de victoire par mois">`;
+  for (let v = Math.ceil(y0 / pas) * pas; v <= y1; v += pas) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 50 ? "var(--axis)" : "var(--grid)"}"/><text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end" class="num">${v} %</text>`;
+  for (const s of series) {
+    const pts = s.values.map((b, i) => b && b.joues ? [X(i), Y(b.pct), b, i] : null).filter(Boolean);
+    if (pts.length > 1) svg += `<path d="${pts.map((p, k) => `${k ? "L" : "M"}${p[0]},${p[1]}`).join("")}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    for (const [x, y, b, i] of pts) svg += `<g><title>${esc(s.label)} · ${esc(catFmt(cats[i]))} : ${pct(b.pct)} de victoires (${b.victoires} V / ${b.joues} matchs)</title>
+      <circle cx="${x}" cy="${y}" r="9" fill="transparent"/><circle cx="${x}" cy="${y}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/></g>`;
+  }
+  cats.forEach((c, i) => { svg += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${esc(catFmt(c))}</text>`; });
+  el.innerHTML = svg + "</svg>";
 }
 
 /* barres groupées : séries côte à côte dans chaque catégorie (2px entre les barres,
@@ -1410,7 +1433,7 @@ function clubCategories(el) {
     $("#legMois").innerHTML = series.length > 1 ? series.map(x => `<span><i class="box" style="background:${x.couleur}"></i>${esc(x.label)}</span>`).join("") : "";
     const donnees = series.map(x => ({ label: x.label, color: x.couleur, values: moisL.map(m => x.cat.par_mois[m] || null) }));
     groupedBars($("#cMoisN"), moisL, donnees, { catFmt: fMois, mode: "matchs", height: 170 });
-    groupedBars($("#cMois"), moisL, donnees, { catFmt: fMois });
+    multiLines($("#cMois"), moisL, donnees, { catFmt: fMois });
     sortableTable($("#tMois"), "catMoisT", [
       { k: "mois", label: "Mois", val: r => r, html: r => fMois(r) },
       ...series.map((x, i) => ({ k: "s" + i, label: x.label, val: r => x.cat.par_mois[r]?.pct ?? null, num: true,
