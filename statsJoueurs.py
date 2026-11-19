@@ -938,6 +938,9 @@ def main_from_json(path):
     all_stats, interclubs, effectif = export_web.charger_dump(path)
     if interclubs is None:  # dump antérieur à la page Interclubs : données publiques, rapides à récupérer
         interclubs = collecter_interclubs()
+    else:  # dump d'une version antérieure du filtre (ex. coupe jeunes "GAB38 Mi-1" prise pour l'équipe 1)
+        interclubs["equipes"] = [e for e in interclubs["equipes"]
+                                 if icbad.equipe_suivie(e.get("division_titre"), e.get("code"))]
     if effectif is None:  # idem pour l'effectif du planificateur (roster public)
         with roster.new_session() as session:
             players = roster.build_players(session)

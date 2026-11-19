@@ -25,7 +25,8 @@ def rencontres_du_jour(session, jour):
     out = []
     for div in icbad.parse_instance(icbad._get(session, f"/instance/{icbad.CLUB}")):
         for ligne in div["classement"]:
-            numero = icbad._numero_equipe(ligne["code"]) if ligne["club"] else None
+            suivie = ligne["club"] and icbad.equipe_suivie(div["titre"], ligne["code"])
+            numero = icbad._numero_equipe(ligne["code"]) if suivie else None
             if numero is None or numero > icbad.EQUIPES_PLANIFICATEUR or not ligne["equipe_id"]:
                 continue
             page = icbad.parse_equipe(icbad._get(session, f"/equipe/{ligne['equipe_id']}"))

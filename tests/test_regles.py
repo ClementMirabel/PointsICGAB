@@ -51,6 +51,13 @@ class TestRegles(unittest.TestCase):
         nb_feuilles = sum(1 for e in self.ic["equipes"] for r in e["rencontres"] for m in r["matchs"] if m["victoire"] is not None)
         self.assertEqual(club["matchs_ic"], nb_feuilles)
 
+    def test_equipes_suivies_interclubs_seulement(self):
+        import icbad
+        self.assertTrue(icbad.equipe_suivie("Interclubs Nationaux N2 - Championnat de France Interclubs N2 - Poule 4", "38-GAB-1"))
+        self.assertTrue(icbad.equipe_suivie("Interclubs Comité 38 Pré-Régional - PR2 - Phase 1 - Poule B", "38-GAB-6"))
+        self.assertFalse(icbad.equipe_suivie("Coupe Comité 38 Coupe Jeunes - Mix'Team 1 - Division 2 Minime", "GAB38 Mi-1"))
+        self.assertFalse(icbad.equipe_suivie("Interclubs Régionaux AURA R1 - RÉGIONALE 1 A", "GAB38 Mi-1"))
+
     def test_equipe_club(self):
         self.assertEqual(results.equipe_club("38-GAB-3 contre 74-ABC-2"), 3)
         self.assertEqual(results.equipe_club("13-BCF-2 contre 38-GAB-12"), 12)

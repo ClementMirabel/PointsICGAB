@@ -80,6 +80,14 @@ def _numero_equipe(code):
     return int(m.group(1)) if m else None
 
 
+def equipe_suivie(titre_division, code):
+    """Équipe d'interclubs à suivre : compétition « Interclubs ... » (pas les
+    coupes, ex. « Coupe Comité 38 Coupe Jeunes - Mix'Team ») et code d'équipe
+    au format habituel « 38-GAB-3 » (la coupe jeunes a « GAB38 Mi-1 »)."""
+    return bool(re.match(r"\s*Interclubs\b", titre_division or "", re.I)
+                and re.fullmatch(r"\d{2,3}-[A-Z0-9]+-\d+", code or ""))
+
+
 def division_courte(libelle):
     """Libellé de la liste des compétitions -> code court de division :
     "National 2 Poule 4" -> "N2", "Pré-National ..." -> "PN", "Régional 1
@@ -321,7 +329,7 @@ def collecter(session=None, club=CLUB, log=print):
     equipes, adversaires = [], {}
     for div in divisions:
         for ligne in div["classement"]:
-            if not ligne["club"] or not ligne["equipe_id"]:
+            if not ligne["club"] or not ligne["equipe_id"] or not equipe_suivie(div["titre"], ligne["code"]):
                 continue
             # équipes 7+ (départemental) hors périmètre de la page Interclubs
             numero_eq = _numero_equipe(ligne["code"])
