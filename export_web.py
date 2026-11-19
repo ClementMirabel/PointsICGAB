@@ -286,6 +286,20 @@ def _interclubs_par_categorie(interclubs):
     return out
 
 
+_TOURNOI_JEUNES = re.compile(r"\bjeunes?\b|\bTDJ|\bTRJ|\bCEJ|\bBAC\s?\d|minibad|poussin|benjamin|minime|cadet|\bU1\d\b", re.I)
+
+
+def tournoi_jeunes(nom, categories):
+    """Tournoi jeunes : nom explicite (Circuit Jeune, TDJ, TRJ, CEJ, BAC...)
+    ou tous les joueurs du club engagés sont des jeunes, dont au moins un
+    cadet ou plus jeune (un tournoi où ne vont que des juniors est souvent un
+    tournoi adultes). `categories` : catégories d'âge des joueurs du club."""
+    if _TOURNOI_JEUNES.search(nom or ""):
+        return True
+    return bool(categories) and all(roster.est_categorie_jeune(c) for c in categories) \
+        and any(roster.est_categorie_jeune(c, sans_junior=True) for c in categories)
+
+
 def _club_payload(all_stats, interclubs=None, effectif=None):
     """Agrégats club (ex-onglets Stats club, Tournois et Stats avancées de
     l'Excel). Chaque match réel compté une fois (voir matchs_club_uniques),
@@ -332,11 +346,14 @@ def _club_payload(all_stats, interclubs=None, effectif=None):
     sets_or = [s["par_tableau"][t]["sets_extremes"] for s in all_stats for t in TABLEAUX]
     joueurs_or = sum(1 for s in all_stats if any(s["par_tableau"][t]["sets_extremes"]["nb_joues"] for t in TABLEAUX))
     tournois = sorted(export_excel._tournois_club(all_stats, min_joueurs=1), key=lambda t: t["date"], reverse=True)
+    categorie_par_nom = {p["nom"]: p.get("categorie") for p in (effectif or [])}
     return {
         "categories": par_categorie,
         "sets_point_en_or": {"joues": sum(x["nb_joues"] for x in sets_or),
                              "gagnes": sum(x["nb_gagnes"] for x in sets_or), "joueurs": joueurs_or},
-        "tournois": [{**t, "pct": _r(t["pct"]), "points": _r(t["points"])} for t in tournois],
+        "tournois": [{**{k: v for k, v in t.items() if k != "noms"}, "pct": _r(t["pct"]), "points": _r(t["points"]),
+                      "jeunes": tournoi_jeunes(t["nom"], [categorie_par_nom.get(n) for n in t.get("noms", [])])}
+                     for t in tournois],
         "rivalites": rivalites(all_stats, {p["nom"] for p in (effectif or [])} | {s["Nom"] for s in all_stats}),
         "pics_mensuels": [{**p, "delta": _r(p["delta"])} for p in export_excel._pics_mensuels(all_stats)],
     }

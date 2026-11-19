@@ -202,6 +202,12 @@ abbr.jeune { text-decoration: none; display: inline-block; font-size: 10px; font
 .leg-btn { all: unset; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 4px; padding: 1px 4px; }
 .leg-btn[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
 .leg-btn:focus-visible { outline: 2px solid var(--s); }
+.sous-titre { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 14px 0 8px; }
+.subnav .seg { display: inline-flex; margin-left: auto; border: 1px solid var(--grid); border-radius: 999px; overflow: hidden; }
+.subnav .seg button { all: unset; cursor: pointer; padding: 3px 11px; font-size: 12.5px; color: var(--ink-2); }
+.subnav .seg button + button { border-left: 1px solid var(--grid); }
+.subnav .seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); font-weight: 600; }
+.subnav .seg button:focus-visible { outline: 2px solid var(--s); outline-offset: -2px; }
 .subnav .coche { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 .subnav .coche input { accent-color: var(--we); width: 15px; height: 15px; }
 table.t tfoot td { border-top: 2px solid var(--axis); border-bottom: 0; font-weight: 600; }
@@ -345,7 +351,7 @@ const rankBadge = (t, c) => `<span class="rank">${TL[t]} <b style="background:${
 /* ---------- état + navigation */
 const byLicence = new Map(DATA.joueurs.map(j => [j.licence, j]));
 const state = { sexe: "tous", q: "", matchFiltre: { tableau: "tous", type: "tous" }, courbeMode: "diff",
-  jeunesSeuls: (() => { try { return !!localStorage.getItem("jeunesSeuls"); } catch (e) { return false; } })() };
+  publicClub: (() => { try { return localStorage.getItem("publicClub") || "tous"; } catch (e) { return "tous"; } })() };
 
 function route() {
   const h = decodeURIComponent(location.hash.slice(1));
@@ -944,10 +950,12 @@ function renderClub(sous, reste = []) {
   const actif = parent || sous;
   $("#main").innerHTML = `<nav class="chips subnav">${SOUS_PAGES.map(([k, l]) =>
     `<a class="chip ${k === actif ? "on" : ""}" href="#club/${k}" ${k === actif ? 'aria-current="page"' : ""}>${l}</a>`).join("")}
-    ${AVEC_CATEGORIES && ["classement", "profil", "suivi"].includes(actif) ? `<label class="coche" title="Classement, profil de jeu et suivi : seulement les jeunes (Minibad à Junior)"><input type="checkbox" id="jeunesSeuls" ${state.jeunesSeuls ? "checked" : ""}> Jeunes uniquement</label>` : ""}</nav><div id="club"></div>`;
-  $("#jeunesSeuls")?.addEventListener("change", e => {
-    state.jeunesSeuls = e.target.checked;
-    try { localStorage.setItem("jeunesSeuls", state.jeunesSeuls ? "1" : ""); } catch (err) {}
+    ${AVEC_CATEGORIES && ["classement", "profil", "suivi"].includes(actif) ? `<span class="seg" role="group" aria-label="Joueurs affichés">${PUBLICS.map(([k, l, aide]) =>
+      `<button type="button" data-public="${k}" aria-pressed="${state.publicClub === k}" title="${aide}">${l}</button>`).join("")}</span>` : ""}</nav><div id="club"></div>`;
+  $("#main .seg")?.addEventListener("click", e => {
+    const b = e.target.closest("[data-public]"); if (!b) return;
+    state.publicClub = b.dataset.public;
+    try { localStorage.setItem("publicClub", state.publicClub); } catch (err) {}
     route();
   });
   if (sous === "detail") return clubDetail($("#club"), reste[0], reste[1], reste[2]);
@@ -1214,13 +1222,17 @@ const ligneMatchRivalite = m => `<div class="small" style="padding:3px 0 3px 18p
 
 /* -- Records */
 function clubRecords(el) {
-  const elig = DATA.club.tournois.filter(t => t.joueurs >= 5);
-  const best = elig.length ? elig.reduce((a, b) => b.pct > a.pct ? b : a) : null;
-  const worst = elig.length ? elig.reduce((a, b) => b.pct < a.pct ? b : a) : null;
-  const carteT = (titre, t) => `<div class="card fact"><span class="k">${titre}</span>${t
+  // tournois adultes et jeunes séparés (un circuit jeunes ne se compare pas à un open adultes)
+  const MIN_JOUEURS = { adultes: 5, jeunes: 3 };
+  const extremes = jeunes => {
+    const elig = DATA.club.tournois.filter(t => !!t.jeunes === jeunes && t.joueurs >= MIN_JOUEURS[jeunes ? "jeunes" : "adultes"]);
+    return elig.length ? [elig.reduce((a, b) => b.pct > a.pct ? b : a), elig.reduce((a, b) => b.pct < a.pct ? b : a)] : [null, null];
+  };
+  const carteT = (titre, t, min) => `<div class="card fact"><span class="k">${titre}</span>${t
     ? `<span class="t">${lienTournoi(t, esc(t.nom))}</span><span class="s num">${fDate(t.date)} · ${t.joueurs} joueurs · ${t.victoires}/${t.matchs} matchs gagnés · <b>${pct(t.pct)}</b></span>
        <span class="s num">Points de cote du club sur le tournoi : <b class="${deltaCls(t.points)}">${signed(t.points)}</b></span>`
-    : `<span class="s">Aucun tournoi avec au moins 5 joueurs du club.</span>`}</div>`;
+    : `<span class="s">Aucun tournoi avec au moins ${min} joueurs du club.</span>`}</div>`;
+  const [bestA, worstA] = extremes(false), [bestJ, worstJ] = extremes(true);
   // pics / chutes : une carte par tableau, une ligne par genre
   const pic = (t, sexe, type) => DATA.club.pics_mensuels.find(p => p.tableau === t && p.sexe === sexe && p.type === type);
   const lignePic = p => p ? `<div class="pic"><span class="${p.type === "Pic" ? "delta-up" : "delta-down"}" aria-hidden="true">${p.type === "Pic" ? "▲" : "▼"}</span>
@@ -1229,8 +1241,11 @@ function clubRecords(el) {
       ${["H", "F"].map(sx => `<div class="pic-genre">${sx === "H" ? "Hommes" : "Femmes"}</div>${lignePic(pic(t, sx, "Pic"))}${lignePic(pic(t, sx, "Chute"))}`).join("")}</div>`).join("");
   el.innerHTML = `
     <section style="margin-top:8px"><h2>Tournoi le plus / le moins victorieux</h2>
-      <p class="hint">Parmi les tournois avec au moins 5 joueurs du club engagés. Cliquer le nom pour les matchs du tournoi.</p>
-      <div class="grid g2">${carteT("Le plus victorieux", best)}${carteT("Le moins victorieux", worst)}</div></section>
+      <p class="hint">Tournois adultes (au moins ${MIN_JOUEURS.adultes} joueurs du club engagés) et tournois jeunes (au moins ${MIN_JOUEURS.jeunes}) : circuits jeunes, ou tournois où tous les joueurs du club engagés sont des jeunes. Cliquer le nom pour les matchs du tournoi.</p>
+      <h3 class="sous-titre">Tournois adultes</h3>
+      <div class="grid g2">${carteT("Le plus victorieux", bestA, MIN_JOUEURS.adultes)}${carteT("Le moins victorieux", worstA, MIN_JOUEURS.adultes)}</div>
+      <h3 class="sous-titre">Tournois jeunes</h3>
+      <div class="grid g2">${carteT("Le plus victorieux", bestJ, MIN_JOUEURS.jeunes)}${carteT("Le moins victorieux", worstJ, MIN_JOUEURS.jeunes)}</div></section>
     <section><h2>Plus gros pics et chutes de cote sur un mois</h2>
       <p class="hint">Pour chaque tableau et chaque genre : ▲ le joueur qui a gagné le plus de points de cote sur un seul mois, ▼ celui qui en a perdu le plus.</p>
       <div class="grid g3">${cartesPics}</div></section>
@@ -1664,7 +1679,7 @@ function renderJoueurIC(x) {
     <div class="card hero">
       <div class="who"><h2>${esc(x.nom)}${badgeJeune(x.licence, x.nom)}</h2>
         <div class="badges">${T.map((t, i) => rankBadge(t, (x.classements[i] || {}).classement)).join("")}</div>
-        <div class="small muted" style="margin-top:8px">Fiche interclubs : la fiche complète (résultats de la saison, cote, indices) n'est générée que pour les joueurs classés R6 ou mieux (P10 ou mieux pour les jeunes) dont le profil myffbad est public.
+        <div class="small muted" style="margin-top:8px">Fiche interclubs : la fiche complète (résultats de la saison, cote, indices) n'est générée que pour les joueurs classés R6 ou mieux (D7 ou mieux pour les jeunes) dont le profil myffbad est public.
           · <a href="https://myffbad.fr/joueur/${esc(x.licence)}" target="_blank" rel="noopener">profil myffbad</a></div></div>
       <div class="stat"><div class="v num">${b.j}</div><div class="l">matchs d'interclub</div></div>
       <div class="stat"><div class="v num">${pct(b.pct)}</div><div class="l">de victoires (${b.v} V – ${b.j - b.v} D)</div></div>
@@ -2750,7 +2765,12 @@ function badgeJeune(licence, nom) {
 /* filtre Tous / Hommes / Femmes / Jeunes (chips) */
 const FILTRES_PUBLIC = [["tous", "Tous"], ["H", "Hommes"], ["F", "Femmes"]];
 /* case "Jeunes uniquement" des pages Club (mémorisée dans le navigateur) */
-const jeuneOk = (licence, nom) => !state.jeunesSeuls || estJeune(licence, nom);
+/* joueurs affichés (Classement, Profil de jeu, Suivi), mémorisé dans le navigateur :
+   jeunes = Minibad à Junior ; adultes = seniors et vétérans, juniors (U19) compris */
+const PUBLICS = [["tous", "Tous", "Tous les joueurs"], ["jeunes", "Jeunes", "Minibad à Junior (U9 à U19)"],
+  ["adultes", "Adultes", "Seniors et vétérans, juniors (U19) compris"]];
+const jeuneOk = (licence, nom) => state.publicClub === "jeunes" ? estJeune(licence, nom)
+  : state.publicClub === "adultes" ? !estJeune(licence, nom) || uDe(categorieDe(licence, nom)) === "U19" : true;
 const filtrePublic = (k, licence, nom, sexe) => (k === "tous" || sexe === k) && jeuneOk(licence, nom);
 function chipsPublic(el, cle, apres) {
   const choix = FILTRES_PUBLIC;
@@ -3479,7 +3499,7 @@ function lignesJeunes() {
 function sectionJeunesSuivi() {
   if (!AVEC_CATEGORIES) return "";
   return `<section><h2>Jeunes : progression et potentiel</h2>
-    <p class="hint">Jeunes avec une fiche complète (classés P10 ou mieux), tableau le mieux coté de chacun. Progression depuis le 1er septembre ; rythme calculé dès 3 semaines de recul.
+    <p class="hint">Jeunes avec une fiche complète (classés D7 ou mieux), tableau le mieux coté de chacun. Progression depuis le 1er septembre ; rythme calculé dès 3 semaines de recul.
       Projection au 30 juin à rythme constant, classement projeté d'après les seuils estimés (voir plus haut). Indicatif : la progression d'un jeune est rarement linéaire.</p>
     <div class="chips" id="jeunesFiltre" style="margin-bottom:10px"></div>
     <div class="card scroll" id="suiviJeunes"></div></section>`;

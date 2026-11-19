@@ -46,6 +46,16 @@ VALEUR_IC_N1_SEUILS = [
 ]
 
 
+# catégories d'âge FFBaD (colonne "Cat." de la recherche myffbad) : jeunes = U9 à U19
+CATEGORIES_JEUNES = ("Minibad", "Poussin", "Benjamin", "Minime", "Cadet", "Junior")
+
+
+def est_categorie_jeune(categorie, sans_junior=False):
+    """"Minime 2" -> True ; "Senior", None -> False. sans_junior : Junior (U19) exclu."""
+    base = (categorie or "").split(" ")[0]
+    return base in (CATEGORIES_JEUNES[:-1] if sans_junior else CATEGORIES_JEUNES)
+
+
 def valeur_ic(tableau, sexe, points_simple, points_double, points_mixte):
     """Barème IC : plus le tableau est haut, plus la valeur est élevée. Pour
     N1, la valeur dépend en plus du nombre de points (paliers différents

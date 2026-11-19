@@ -760,14 +760,13 @@ def check_collapse_hypothesis(licence_id):
 # scrapé : chaque joueur nécessite une page authentifiée à plusieurs clics,
 # tout le club prendrait beaucoup trop de temps.
 SEUIL_TABLEAU_MIN = "R6"
-# jeunes (catégorie d'âge myffbad) suivis plus bas : leur progression compte
-# pour le club (une vingtaine de joueurs en plus, ~20 % de temps d'export)
-SEUIL_TABLEAU_MIN_JEUNES = "P10"
-CATEGORIES_JEUNES = ("Minibad", "Poussin", "Benjamin", "Minime", "Cadet", "Junior")
+# jeunes (catégorie d'âge myffbad) suivis un peu plus bas : leur progression
+# compte pour le club
+SEUIL_TABLEAU_MIN_JEUNES = "D7"
 
 
 def est_jeune(player):
-    return (player.get("Categorie") or "").split(" ")[0] in CATEGORIES_JEUNES
+    return roster.est_categorie_jeune(player.get("Categorie"))
 
 
 def joueur_est_eligible(player):

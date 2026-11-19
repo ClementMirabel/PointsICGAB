@@ -89,14 +89,21 @@ class TestRegles(unittest.TestCase):
         self.assertEqual(historique_ic.cotes_j10(h, "2026-11-28")[0], "2026-11-26T01:05Z")
         self.assertIsNone(historique_ic.cotes_j10(h, "2026-12-19"))
 
-    # --- fiches complètes : R6 ou mieux, P10 ou mieux pour les jeunes
+    # --- fiches complètes : R6 ou mieux, D7 ou mieux pour les jeunes
     def test_eligibilite_scraping(self):
         import statsJoueurs
         self.assertTrue(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "R6", "Categorie": "Senior"}))
         self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "D7", "Categorie": "Senior"}))
-        self.assertTrue(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "P10", "Categorie": "Minime 2"}))
-        self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "P11", "Categorie": "Cadet 1"}))
+        self.assertTrue(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "D7", "Categorie": "Minime 2"}))
+        self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": "D8", "Categorie": "Cadet 1"}))
         self.assertFalse(statsJoueurs.joueur_est_eligible({"Meilleur tableau": None}))
+
+    def test_tournoi_jeunes(self):
+        self.assertTrue(export_web.tournoi_jeunes("Circuit Jeune Départemental 38 - TDJ38 Voiron", ["Senior"]))
+        self.assertTrue(export_web.tournoi_jeunes("PromoGAB n°1", ["Junior 1", "Junior 2", "Cadet 1"]))
+        self.assertFalse(export_web.tournoi_jeunes("PLUMAIX 6", ["Junior 2"]))  # que des juniors : tournoi adultes
+        self.assertFalse(export_web.tournoi_jeunes("Back To Bad XI", ["Senior", "Cadet 2", "Minime 1"]))
+        self.assertFalse(export_web.tournoi_jeunes("Smashes et Châtaignes", []))
 
     # --- pronostics
     def test_logistique(self):

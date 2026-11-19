@@ -1357,7 +1357,7 @@ def _tournois_club(all_stats, min_joueurs=1):
             candidats.append({
                 "nom": nom, "date": groupe[0], "joueurs": len(joueurs),
                 "matchs": joues, "victoires": victoires, "pct": pct, "points": points,
-                "dates": list(groupe),
+                "dates": list(groupe), "noms": sorted(joueurs),
             })
     return candidats
 
