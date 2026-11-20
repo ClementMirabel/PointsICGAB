@@ -1,4 +1,11 @@
 {
-  "equipes": {},
+  "equipes": { 
+    "1": { "objectif": "Montée", "rang_vise": 1 },
+    "2": { "objectif": "Montée", "rang_vise": 1 }, 
+    "3": { "objectif": "Montée", "rang_vise": 1 }, 
+    "4": { "objectif": "Montée", "rang_vise": 1 }, 
+    "5": { "objectif": "Montée", "rang_vise": 1 }, 
+    "6": { "objectif": "Montée", "rang_vise": 1 } 
+  },
   "joueurs": {}
 }
