@@ -7,5 +7,5 @@
     "5": { "objectif": "Montée", "rang_vise": 1 }, 
     "6": { "objectif": "Montée", "rang_vise": 1 } 
   },
-  "joueurs": {}
+  "joueurs": { "Clément MIRABEL": { "Simple": "N3" }, { "Double": "R4" }, { "Mixte": "R4" } }
 }
