@@ -1,3 +1,4 @@
+import json
 import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
@@ -54,6 +55,53 @@ def est_categorie_jeune(categorie, sans_junior=False):
     """"Minime 2" -> True ; "Senior", None -> False. sans_junior : Junior (U19) exclu."""
     base = (categorie or "").split(" ")[0]
     return base in (CATEGORIES_JEUNES[:-1] if sans_junior else CATEGORIES_JEUNES)
+
+
+SEUILS_URL = "https://myffbad.fr/seuils-de-classement"
+_CHAMPS_SEUILS = {("H", "Simple"): "MenSingleRate", ("F", "Simple"): "WomenSingleRate",
+                  ("H", "Double"): "MenDoubleRate", ("F", "Double"): "WomenDoubleRate",
+                  ("H", "Mixte"): "MenMixteRate", ("F", "Mixte"): "WomenMixteRate"}
+
+
+def parse_seuils(html):
+    """Page « Seuils de classement » -> {"H"|"F": {"Simple"|"Double"|"Mixte":
+    {"N1": 3251.0, ...}}} : cote minimale de chaque classement pour la
+    semaine en cours. Le tableau affiché ne montre qu'un sexe (bouton
+    Hommes / Femmes géré en JavaScript), mais la page embarque les deux dans
+    ses données (rankingLevels, chaîne JSON échappée). None si introuvable."""
+    texte = html.replace(chr(92) + '"', '"')
+    debut = texte.find('"rankingLevels":[')
+    if debut < 0:
+        return None
+    debut = texte.index("[", debut)
+    profondeur, fin = 0, None
+    for i in range(debut, len(texte)):
+        if texte[i] == "[":
+            profondeur += 1
+        elif texte[i] == "]":
+            profondeur -= 1
+            if profondeur == 0:
+                fin = i + 1
+                break
+    if fin is None:
+        return None
+    niveaux = json.loads(texte[debut:fin])
+    seuils = {"H": {}, "F": {}}
+    for (sexe, tableau), champ in _CHAMPS_SEUILS.items():
+        seuils[sexe][tableau] = {n["SubLevel"]: float(n[champ]) for n in niveaux
+                                 if n.get("SubLevel") in TABLEAUX and n.get(champ) not in (None, "")}
+    return seuils if any(seuils["H"].values()) else None
+
+
+def fetch_seuils(session):
+    """Seuils officiels de la semaine (une requête, page publique) ; None en cas d'échec."""
+    try:
+        r = session.get(SEUILS_URL, timeout=30)
+        r.raise_for_status()
+        return parse_seuils(r.text)
+    except Exception as e:  # pas bloquant : la page retombe sur une estimation
+        print(f"Seuils de classement indisponibles : {e}")
+        return None
 
 
 def valeur_ic(tableau, sexe, points_simple, points_double, points_mixte):

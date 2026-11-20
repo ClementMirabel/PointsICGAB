@@ -827,7 +827,9 @@ def main(licence_filter):
         sys.exit(1)
 
     stats.normaliser_club(all_stats)
-    export_web.write_stats_json(all_stats, os.path.join(APP_DIR, "statsJoueurs.json"), interclubs, effectif)
+    with roster.new_session() as session:
+        seuils = roster.fetch_seuils(session)
+    export_web.write_stats_json(all_stats, os.path.join(APP_DIR, "statsJoueurs.json"), interclubs, effectif, seuils)
     # valeurs des joueurs figées pour les week-ends d'interclubs qui viennent de se terminer
     chemin_hist = os.path.join(APP_DIR, historique_ic.FICHIER)
     historique = historique_ic.charger(chemin_hist)
@@ -836,7 +838,7 @@ def main(licence_filter):
     historique_ic.sauver(historique, chemin_hist)
     print(f"Historique des valeurs IC : {len(historique['weekends'])} week-end(s)"
           + (f", ajouté(s) : {', '.join(ajoutes)}" if ajoutes else ", rien de nouveau"))
-    ecrire_exports(all_stats, interclubs, effectif, historique)
+    ecrire_exports(all_stats, interclubs, effectif, historique, seuils=seuils)
 
 
 def scrape_resultats(driver, licence, nom):
@@ -918,14 +920,15 @@ def collecter_interclubs():
         return None
 
 
-def ecrire_exports(all_stats, interclubs=None, effectif=None, historique=None, precedent=None):
+def ecrire_exports(all_stats, interclubs=None, effectif=None, historique=None, precedent=None, seuils=None):
     """Excel + page web (HTML autonome) - all_stats déjà normalisé."""
     output_path = os.path.join(APP_DIR, "statsJoueurs.xlsx")
     export_excel.write_stats_excel(all_stats, output_path)
     html_path = export_web.write_stats_html(all_stats, os.path.join(APP_DIR, "statsJoueurs.html"),
                                             interclubs=interclubs, effectif=effectif, historique=historique,
                                             precedent=precedent,
-                                            objectifs=export_web.charger_objectifs(os.path.join(APP_DIR, export_web.OBJECTIFS_NOM)))
+                                            objectifs=export_web.charger_objectifs(os.path.join(APP_DIR, export_web.OBJECTIFS_NOM)),
+                                            seuils=seuils)
     print(f"\n{len(all_stats)} joueur(s) traité(s) -> {output_path}, {html_path}")
 
 
@@ -956,7 +959,12 @@ def main_from_json(path):
     if os.path.exists(chemin_prec):
         with open(chemin_prec, encoding="utf-8") as f:
             precedent = json.load(f) or {}
-    ecrire_exports(all_stats, interclubs, effectif, historique, precedent)
+    # seuils du dump ; dump antérieur à leur ajout : lecture directe (une requête, repli sur l'estimation si échec)
+    seuils = export_web.charger_seuils(path)
+    if seuils is None:
+        with roster.new_session() as session:
+            seuils = roster.fetch_seuils(session)
+    ecrire_exports(all_stats, interclubs, effectif, historique, precedent, seuils)
 
 
 if __name__ == "__main__":

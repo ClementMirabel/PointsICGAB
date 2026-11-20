@@ -105,6 +105,20 @@ class TestRegles(unittest.TestCase):
         self.assertFalse(export_web.tournoi_jeunes("Back To Bad XI", ["Senior", "Cadet 2", "Minime 1"]))
         self.assertFalse(export_web.tournoi_jeunes("Smashes et Châtaignes", []))
 
+    def test_seuils_de_classement(self):
+        # extrait au format de la page myffbad (données embarquées, guillemets échappés)
+        bs = chr(92)
+        html = ('<script>self.__next_f.push([1,"23:[' + bs + '"$' + bs + '",{' + bs + '"rankingLevels' + bs + '":[{'
+                + ",".join(f'{bs}"{k}{bs}":{bs}"{v}{bs}"' for k, v in (
+                    ("SubLevel", "N1"), ("MenSingleRate", "3251.00"), ("WomenSingleRate", "2573.00"),
+                    ("MenDoubleRate", "3267.00"), ("WomenDoubleRate", "2719.00"),
+                    ("MenMixteRate", "3267.00"), ("WomenMixteRate", "3267.00")))
+                + '}]}]"])</script>')
+        seuils = roster.parse_seuils(html)
+        self.assertEqual(seuils["H"]["Simple"]["N1"], 3251.0)
+        self.assertEqual(seuils["F"]["Double"]["N1"], 2719.0)
+        self.assertIsNone(roster.parse_seuils("<html></html>"))
+
     # --- pronostics
     def test_logistique(self):
         # données construites : plus l'écart est grand, plus on gagne

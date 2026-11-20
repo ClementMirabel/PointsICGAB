@@ -50,10 +50,10 @@ def _json_default(obj):
 
 # ---------------------------------------------------------------- dump / cache
 
-def write_stats_json(all_stats, output_path, interclubs=None, effectif=None):
+def write_stats_json(all_stats, output_path, interclubs=None, effectif=None, seuils=None):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump({"genere_le": datetime.now().isoformat(timespec="minutes"), "all_stats": all_stats,
-                   "interclubs": interclubs, "effectif": effectif},
+                   "interclubs": interclubs, "effectif": effectif, "seuils": seuils},
                   f, ensure_ascii=False, default=_json_default)
     return output_path
 
@@ -69,6 +69,12 @@ def _reviver(obj):
     if isinstance(obj, str) and _DATE_ISO.match(obj):
         return date.fromisoformat(obj)
     return obj
+
+
+def charger_seuils(path):
+    """Seuils de classement enregistrés dans le dump (None s'il est antérieur à leur ajout)."""
+    with open(path, encoding="utf-8") as f:
+        return json.load(f).get("seuils")
 
 
 def charger_stats_json(path):
@@ -629,7 +635,7 @@ def charger_objectifs(path):
         return {"erreur": f"{OBJECTIFS_NOM} illisible : {e}"}
 
 
-def build_payload(all_stats, interclubs=None, effectif=None, historique=None, objectifs=None):
+def build_payload(all_stats, interclubs=None, effectif=None, historique=None, objectifs=None, seuils=None):
     joueurs = sorted((_joueur_payload(s) for s in all_stats), key=lambda j: j["nom"])
     return {
         "genere_le": datetime.now().strftime("%d/%m/%Y %H:%M"),
@@ -649,15 +655,17 @@ def build_payload(all_stats, interclubs=None, effectif=None, historique=None, ob
         "modele_victoire": modele_victoire(all_stats),
         "instantanes": _instantanes(historique),
         "objectifs": objectifs,
+        # seuils officiels de classement de la semaine (myffbad), sinon estimés côté page
+        "seuils": seuils,
     }
 
 
 def write_stats_html(all_stats, output_path, template_path=TEMPLATE_PATH, interclubs=None, effectif=None, historique=None,
-                     precedent=None, objectifs=None):
+                     precedent=None, objectifs=None, seuils=None):
     with open(template_path, encoding="utf-8") as f:
         template = f.read()
     assert DATA_PLACEHOLDER in template, f"{DATA_PLACEHOLDER} absent du gabarit {template_path}"
-    payload = build_payload(all_stats, interclubs, effectif, historique, objectifs)
+    payload = build_payload(all_stats, interclubs, effectif, historique, objectifs, seuils)
     dossier = os.path.dirname(os.path.abspath(output_path))
     # precedent fourni ({} = « aucun » connu) : pas d'appel réseau
     payload["precedent"] = (precedent or None) if precedent is not None else resume_precedent()

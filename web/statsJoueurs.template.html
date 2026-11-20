@@ -2785,6 +2785,20 @@ Object.assign(state, { suiviPublic: "tous", suiviTableau: "Simple", inactifSem: 
 const ORDRE_CLT = ["P12", "P11", "P10", "D9", "D8", "D7", "R6", "R5", "R4", "N3", "N2", "N1"];
 const rangClt = c => ORDRE_CLT.indexOf(c);
 const badgeClt = c => `<b class="rk" style="background:${rankColor(c)}">${esc(c || "NC")}</b>`;
+/* seuils de classement {i + sexe: {classement: cote minimale}} : officiels
+   (myffbad, semaine de l'export) quand ils ont été récupérés, sinon estimés */
+const SEUILS_OFFICIELS = !!DATA.seuils;
+let _seuilsCl = null;
+function seuilsClassement() {
+  if (_seuilsCl) return _seuilsCl;
+  if (!DATA.seuils) return (_seuilsCl = seuilsEstimes());
+  _seuilsCl = {};
+  T.forEach((t, i) => { for (const sx of ["H", "F"]) _seuilsCl[i + sx] = { ...(DATA.seuils[sx]?.[t] || {}) }; });
+  return _seuilsCl;
+}
+const AIDE_SEUIL = () => SEUILS_OFFICIELS
+  ? "Seuil officiel FFBaD de la semaine (myffbad, Seuils de classement) : cote minimale du classement, par tableau et par sexe"
+  : "Seuil estimé : cote la plus basse d'un joueur du club déjà à ce classement (même tableau, même sexe)";
 /* seuil estimé d'un classement : cote la plus basse d'un joueur du club qui
    l'a déjà, dans le même tableau et le même sexe. Les seuils officiels ne
    sont pas récupérés : c'est un majorant (le vrai seuil est au plus là). */
@@ -2819,8 +2833,10 @@ function clubSuivi(el) {
       <div class="chips" id="suiviPublic" style="margin-bottom:10px"></div>
       <div class="card scroll" id="suiviProg"></div></section>
     <section><h2>Proches du classement supérieur</h2>
-      <p class="hint">Estimation : pour chaque tableau et chaque sexe, le seuil du classement supérieur est approché par la cote la plus basse d'un joueur du club qui l'a déjà.
-        Le vrai seuil est au plus à ce niveau : « au plus 40 pts » veut dire qu'il manque 40 points ou moins. Joueurs avec une fiche complète, à moins de 8 % du seuil.</p>
+      <p class="hint">${SEUILS_OFFICIELS
+        ? "Seuils officiels FFBaD de la semaine de l'export (myffbad, Seuils de classement), par tableau et par sexe. Les seuils bougent chaque semaine : l'écart est celui du jour de l'export."
+        : "Estimation : pour chaque tableau et chaque sexe, le seuil du classement supérieur est approché par la cote la plus basse d'un joueur du club qui l'a déjà. Le vrai seuil est au plus à ce niveau : « au plus 40 pts » veut dire qu'il manque 40 points ou moins."}
+        Joueurs avec une fiche complète, à moins de 8 % du seuil.</p>
       <div class="chips" id="procheFiltre" style="margin-bottom:10px"></div>
       <div class="card scroll" id="suiviProches"></div></section>
     ${sectionJeunesSuivi()}
@@ -2865,7 +2881,7 @@ function clubSuivi(el) {
   drawProg();
 
   // proches du classement supérieur : tout l'effectif, cotes actuelles
-  const S = seuilsEstimes(), proches = [];
+  const S = seuilsClassement(), proches = [];
   for (const p of EFF.filter(x => ficheDe(x.licence, x.nom))) for (let i = 0; i < 3; i++) {
     const c = p.classements?.[i], v = p.cotes?.[i], r = rangClt(c);
     if (r < 0 || r === ORDRE_CLT.length - 1 || !v) continue;
@@ -2880,8 +2896,8 @@ function clubSuivi(el) {
     { k: "t", label: "Tableau", val: r => r.t, html: r => `<span class="tagsw"><i style="background:${TC[r.t]}"></i>${r.t}</span>` },
     { k: "clt", label: "Clt → visé", val: r => rangClt(r.c), html: r => `${badgeClt(r.c)} → ${badgeClt(r.suivant)}` },
     { k: "cote", label: "Cote", val: r => r.v, num: true },
-    { k: "seuil", label: "Seuil estimé", val: r => r.seuil, num: true, sm: true, title: "Cote la plus basse d'un joueur du club déjà à ce classement (même tableau, même sexe)" },
-    { k: "ecart", label: "Manque", val: r => r.ecart, html: r => r.ecart ? `au plus ${fmt(r.ecart)} pts` : `<b class="delta-up">au niveau</b>`, num: true },
+    { k: "seuil", label: SEUILS_OFFICIELS ? "Seuil" : "Seuil estimé", val: r => r.seuil, num: true, sm: true, title: AIDE_SEUIL() },
+    { k: "ecart", label: "Manque", val: r => r.ecart, html: r => r.ecart ? `${SEUILS_OFFICIELS ? "" : "au plus "}${fmt(r.ecart)} pts` : `<b class="delta-up">au niveau</b>`, num: true },
   ], proches.filter(r => filtrePublic(state.prochePublic, r.p.licence, r.p.nom, r.p.sexe)), { defaut: { cle: "ecart", sens: 1 } });
   chipsPublic($("#procheFiltre"), "prochePublic", drawProches);
   drawProches();
@@ -3478,7 +3494,7 @@ function clubActus(el) {
 /* ---------- Club > Suivi : potentiel des jeunes */
 const FIN_SAISON = () => `${+DATA.saison.slice(0, 4) + 1}-06-30`;
 function lignesJeunes() {
-  const premier = DATA.instantanes?.premier, S = seuilsEstimes();
+  const premier = DATA.instantanes?.premier, S = seuilsClassement();
   const finSaison = FIN_SAISON(), semRestantes = Math.max(0, (d2(finSaison) - d2(AUJ)) / 864e5 / 7);
   const rows = EFF.filter(p => estJeune(p.licence, p.nom) && ficheDe(p.licence, p.nom)).map(p => {
     const cotes = p.cotes || [0, 0, 0], i = cotes.indexOf(Math.max(...cotes)), t = T[i], f = ficheDe(p.licence, p.nom);
@@ -3500,7 +3516,7 @@ function sectionJeunesSuivi() {
   if (!AVEC_CATEGORIES) return "";
   return `<section><h2>Jeunes : progression et potentiel</h2>
     <p class="hint">Jeunes avec une fiche complète (classés D7 ou mieux), tableau le mieux coté de chacun. Progression depuis le 1er septembre ; rythme calculé dès 3 semaines de recul.
-      Projection au 30 juin à rythme constant, classement projeté d'après les seuils estimés (voir plus haut). Indicatif : la progression d'un jeune est rarement linéaire.</p>
+      Projection au 30 juin à rythme constant, classement projeté d'après les seuils de classement (voir plus haut). Indicatif : la progression d'un jeune est rarement linéaire.</p>
     <div class="chips" id="jeunesFiltre" style="margin-bottom:10px"></div>
     <div class="card scroll" id="suiviJeunes"></div></section>`;
 }
@@ -3565,7 +3581,7 @@ function objectifsJoueurs() {
 }
 function objectifJoueur(p, i, clt) {
   const t = T[i], cote = p.cotes?.[i] ?? 0, actuel = p.classements?.[i];
-  const seuil = seuilsEstimes()[i + p.sexe]?.[clt] ?? null, atteint = rangClt(actuel) >= rangClt(clt);
+  const seuil = seuilsClassement()[i + p.sexe]?.[clt] ?? null, atteint = rangClt(actuel) >= rangClt(clt);
   const f = ficheDe(p.licence, p.nom), premier = DATA.instantanes?.premier;
   let depart = null, ref = null;
   if (f && f.tableaux[t].cote_sept != null) { depart = f.tableaux[t].cote_sept; ref = `${DATA.saison.slice(0, 4)}-09-01`; }
@@ -3584,7 +3600,7 @@ const objectifsDuJoueur = licence => objectifsJoueurs().lignes.filter(x => x.p.l
 const jauge = v => v == null ? "" : `<span class="jauge" title="${fmt(v)} % du chemin depuis la cote de départ"><i style="width:${v.toFixed(0)}%"></i></span>`;
 function texteQuand(x) {
   if (x.atteint) return pastilleEtat(["ok", "atteint"]);
-  if (x.seuil == null) return `<span class="muted">seuil inconnu (aucun joueur du club à ce classement)</span>`;
+  if (x.seuil == null) return `<span class="muted">seuil inconnu${SEUILS_OFFICIELS ? "" : " (aucun joueur du club à ce classement)"}</span>`;
   if (x.rythme == null) return `<span class="muted">rythme pas encore connu</span>`;
   if (x.rythme <= 0) return pastilleEtat(["ko", "pas au rythme actuel"]);
   return x.quand === "après" ? pastilleEtat(["warn", "après la fin de saison au rythme actuel"]) : pastilleEtat(["ok", `vers le ${fDate(x.quand)}`]);
@@ -3612,7 +3628,7 @@ function clubObjectifs(el) {
         <td>${pastilleEtat(x.etat)}</td></tr>`).join("")}</tbody></table></div>
       <p class="hint" style="margin-top:6px">Projection à rythme constant (points par rencontre), comme dans Interclubs → Pilotage.</p>` : `<div class="card empty">Aucun objectif d'équipe.</div>`}</section>
     <section><h2>Joueurs</h2>${lignes.length ? `<div class="card scroll" id="objJoueurs"></div>
-      <p class="hint" style="margin-top:6px">Avancement : chemin parcouru depuis la cote du 1er septembre (fiche complète) ou du premier export enregistré, jusqu'au seuil estimé du classement visé (cote la plus basse d'un joueur du club à ce classement, même tableau et même sexe). Date : au rythme actuel de progression.</p>`
+      <p class="hint" style="margin-top:6px">Avancement : chemin parcouru depuis la cote du 1er septembre (fiche complète) ou du premier export enregistré, jusqu'au seuil du classement visé (${SEUILS_OFFICIELS ? "seuil officiel FFBaD de la semaine" : "estimé : cote la plus basse d'un joueur du club à ce classement, même tableau et même sexe"}). Date : au rythme actuel de progression.</p>`
       : `<div class="card empty">Aucun objectif individuel.</div>`}</section>`;
   el.querySelector("table")?.addEventListener("click", ev => { const tr = ev.target.closest("tr[data-href]"); if (tr && !ev.target.closest("a")) location.hash = tr.dataset.href; });
   if (lignes.length) sortableTable($("#objJoueurs"), "objJoueurs", [
@@ -3620,7 +3636,7 @@ function clubObjectifs(el) {
     { k: "t", label: "Tableau", val: r => r.t, html: r => `<span class="tagsw"><i style="background:${TC[r.t]}"></i>${r.t}</span>` },
     { k: "obj", label: "Actuel → visé", val: r => rangClt(r.clt), html: r => `${badgeClt(r.actuel)} → ${badgeClt(r.clt)}` },
     { k: "cote", label: "Cote", val: r => r.cote, num: true },
-    { k: "seuil", label: "Seuil estimé", val: r => r.seuil, num: true, sm: true },
+    { k: "seuil", label: SEUILS_OFFICIELS ? "Seuil" : "Seuil estimé", val: r => r.seuil, num: true, sm: true, title: AIDE_SEUIL() },
     { k: "av", label: "Avancement", val: r => r.avancement, html: r => r.avancement == null ? "–" : `${jauge(r.avancement)} <span class="num small">${fmt(r.avancement)} %</span>`, num: true },
     { k: "rythme", label: "Pts / sem.", val: r => r.rythme, html: r => r.rythme == null ? "–" : `<span class="${deltaCls(r.rythme)}">${signed(r.rythme, 1)}</span>`, num: true, sm: true },
     { k: "quand", label: "Échéance", val: r => r.atteint ? "" : r.quand || "~", html: texteQuand },
